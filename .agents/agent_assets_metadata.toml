@@ -6,3 +6,9 @@ id = "xnL8s-N0JMrzO-bJDYzNM"
 uri = "file://analysis/ditto_api_endpoints.md"
 type = "text"
 title = "Ditto Live — All API Endpoints"
+
+[[outputs]]
+id = "EKtnhn3fDBwkbXCve-nWW"
+uri = "file://analysis/ditto_api_endpoints_ar.md"
+type = "text"
+title = "Ditto Live — كل نقاط API (عربي)"
