@@ -1,0 +1,261 @@
+هبعتلك اخر شات بيننا علشان تفتكر كنا بنعمل ايه
+
+56 minutes ago
+
+Show less
+
+3 actions
+تمام، اتذكرت كل حاجة! إحنا كنا بنعمل Reverse Engineering لتطبيق Ditto Live (com.ditto.mobile) عشان نفك تشفير الـ ed field اللي بتيجي في responses من الـ API.
+
+ملخص اللي عملناه:
+🎯 الهدف: فك تشفير الـ ed field في ردود www.sayyouditto.com
+
+✅ اللي اكتشفناه:
+
+الـ .so بيستخدم XOR obfuscation (OLLVM datadiv) لإخفاء الـ strings
+استخرجنا 4 مرشحين لـ AES key من الـ .data section:
+713eb1bde2574f94a88ccf2dcbd28f00
+4267e81c92164bad9ddd0bbfb7b5e59a
+98ba91ef b9dd44829636cc327c7ecc2e
+7c006db4520e484e851b79175691046b
+الخوارزمية مؤكدة: AES/CBC/PKCS5PADDING (من الـ DEX)
+عندنا 29 network flow من mitmproxy
+❌ المشكلة اللي وقفنا فيها:
+كل محاولات الـ decryption فشلت — الـ IV مش صح
+
+⚡ الخطوة الجاية المهمة:
+عندنا Known-Plaintext Attack جاهزة — flows 8,9,10,12,13 كلهم بيرجعوا نفس الـ ciphertext بالظبط، يعني الـ plaintext هو على الأرجح {"code":0,"msg":"ok"} — ممكن نستخدم ده نكسر الـ IV.
+
+تحب نكمل من Known-Plaintext Attack دي؟
+
+
+Checkpoint made
+55 minutes ago
+
+Worked for 22 seconds
+Time worked
+22 seconds
+Work done
+1 action
+Items read
+137 lines
+تمام كما
+
+55 minutes ago
+
+Show less
+
+Planning directory file inspection
+تمام، نبدأ الـ Known-Plaintext Attack! خليني أشوف الـ files الموجودة الأول.
+
+
+5 actions
+عندنا كل حاجة جاهزة، خليني أشغّل الـ Known-Plaintext Attack دلوقتي!
+
+
+2 actions
+الـ output طويل جداً، خليني آخد الجزء المهم بس:
+
+
+2 actions
+🚨 اكتشاف ضخم! كل الـ responses بتبدأ بـ 1f8b — ده الـ gzip magic bytes! الـ responses مش encrypted خالص، هي gzip مضغوطة فقط!
+
+خليني أفك الضغط دلوقتي!
+
+
+2 actions
+🔥 اكتشاف تاني ضخم! الـ responses مش gzip encrypted — الـ HTTP response هو JSON فيه {"ed":"<base64>"} والـ ed ده هو المشفر!
+
+لاحظت حاجة مهمة: معظم الـ responses بتبدأ بنفس الـ prefix cEv/pIPnU8Ebmn2Z0EgQa والـ "ok" responses بتبدأ بـ kh/RUBJ+TiH7EuBmeN0MN!
+
+ده يعني نفس الـ IV بيتستخدم دايمًا، خليني أشغّل الـ decryption عليهم دلوقتي:
+
+
+2 actions
+اللي حصل: الكل شارك نفس الـ first 16 bytes → يعني نفس plaintext block أول لكل الـ responses! ده CBC بـ fixed IV. خليني أحاول أكتشف الـ plaintext prefix:
+
+
+2 actions
+لا match. خليني أرجع للأساس وأفحص كل الـ .data entries في الـ .so بدقة، خصوصاً الـ entries اللي ممكن تكون IV:
+
+
+4 actions
+الـ analyze_datadiv.js مش بيدينا النتايج الصح. خليني أكتب script جديد يجرب approaches مختلفة:
+
+
+4 actions
+🎯 اكتشاف مهم! في 5 مفاتيح AES جديدة كنا ناسيينهم! خليني أجرب كلهم فوراً:
+
+
+2 actions
+مفيش نتيجة. خليني أحاول من زاوية تانية - أفحص الـ response headers وأحلل الـ DEX code عشان أفهم الـ exact decryption logic:
+
+
+2 actions
+مفيش IV في الـ headers. خليني أحلل الـ DEX code مباشرةً وأفحص الـ flow file التاني في نفس الوقت:
+
+
+9 actions
+اكتشفت getTmpSecretKey وgetQnSecretKey في classes.dex! وبالنظر للـ entries، entry 8 عنده "1d3fb23ccf72a81881037835036c29f16d" (34 chars مش 32). خليني أفحص الـ binary entries وأجرب أساليب جديدة:
+
+
+3 actions
+حاجة مهمة! Entry 8 عنده 34 char مش 32، ويبدو انه قد يكون first 32 chars هو الـ key. وكمان entry 13 عنده 'A' uppercase - ده مش hex standard. خليني أجرب multiple approaches جديدة وأحلل الـ DEX strings:
+
+
+6 actions
+🔑 اكتشاف مهم! في classes.dex عندنا hex strings يمكن تكون IV:
+
+100d26b02f61c1b1e489184cd4db4955
+498b35e400dc87536461e4d6d353505c
+0123456789ABCDEF (test IV شهير!)
+1ea53d260ecf11e7b56e00163e046a26 (classes3.dex)
+خليني أجربهم كـ IVs مع كل الـ keys:
+
+
+3 actions
+🎯 اكتشاف ضخم! وجدت Lcom/ditto/ditto_framework/aes/JniAesKit; - ده هو الـ class اللي بيتعامل مع الـ JNI AES! خليني أحلله مباشرةً:
+
+
+3 actions
+جدداً! عندنا DESKit كمان! خليني أفحص الـ JniAesKit class bytecode مباشرةً:
+
+
+3 actions
+خليني أجرب SM4 (الـ cipher الصيني القياسي) وأبحث عنه في الـ DEX - التطبيقات الصينية كثيراً ما تستخدمه:
+
+
+4 actions
+🎯 SM4 في classes5.dex و classes6.dex! التطبيق يستخدم SM4 (الـ cipher الصيني)! خليني أجربه فوراً:
+
+
+3 actions
+الآن أفهم! الـ ciphertext الأول ثابت = {"code":0,"data": هو أول 16 bytes في كل response. خليني أعكس الـ AES لأجد الـ IV:
+
+
+6 actions
+loginCT = 352 bytes = 22 blocks ✓ ... سبق الخطأ في الحساب. خليني أجرب decryption بدون padding validation واستخدم الـ IV من اول block للحصول على P[1]...P[n]:
+
+
+3 actions
+الـ scores كلها ~0.38 مش كافية. يعني مفيش من الـ 9 keys هو الصح. الـ key يمكن يجي من DEX، مش الـ .so! خليني أجرب الـ hex strings من DEX كـ keys:
+
+
+Show less
+
+Ran node
+
+Ran #
+
+Analyzing encryption key derivation (46 seconds)
+Critical observation from the POST request analysis:
+
+Flows 8, 9, 12, 13 all share the SAME first block: 5e43c6a04e19d6beb4bdd01686748af9
+
+Flow 8: /user/update/current/language - 128 bytes
+Flow 9: /match/cleanBusy - 112 bytes
+Flow 12: /sud/game/user/in - 112 bytes
+Flow 13: /acc/online - 112 bytes
+Flows 9, 12, 13 even have the SAME LAST BLOCK: 64c1188c10746948dc85b7066b06988b
+And all three are identical in size at 112 bytes (7 blocks), meaning they're encrypting the same plaintext with the same key and IV—this strongly suggests they're all sending identical authentication headers or request-specific data through the getEk encryption function.
+
+Looking at the ciphertext patterns, I notice the server responses consistently start with 704bffa483e753c11b9a7d99d048106a, while flows 8, 9, 12, and 13 all begin with 5e43c6a04e19d6beb4bdd01686748af9. This is classic AES-CBC behavior with a fixed IV—the first block of ciphertext is always the same when the first 16 bytes of plaintext are identical. For the requests, that plaintext probably starts with something like a token field or user ID, and I need to figure out which encryption key is actually being used here.
+
+The fact that flows 9, 12, and 13 have completely identical ciphertexts—same first block, same last block, same 112-byte length—means they're encrypting identical plaintexts. That's interesting because they're hitting different endpoints, so either the request body is truly identical across all three, or there's something else going on. A 112-byte payload with PKCS5 padding could hold something like a JSON object with a token, device ID, and maybe a timestamp. But if the ciphertexts are exactly the same, the plaintext has to be exactly the same too—which would mean either there's no timestamp, or the timestamp is somehow fixed across these requests.
+
+Now looking at the response side, I'm noticing that all the large responses start with the same first ciphertext block 704bffa483e753c11b9a7d99d048106a. If the IV and key are both fixed, then that first block is always encrypting the same plaintext—probably something like {"code":0,"data": which is a typical JSON API response prefix. This is a key observation because it means I can potentially identify the structure of the responses just from the repeated first block.
+
+I'm now thinking about a different angle: if I can guess the plaintext of the first block and I know the ciphertext, I can work backwards through the AES decryption to test candidate keys and IVs. For the second block, the relationship is simpler—once I know C[0], I can recover P[1] directly from C[1] using the decryption formula, which depends only on the key and the previous ciphertext block. So the "ok" response must be longer than I initially thought—somewhere between 33 and 48 bytes of plaintext to fill those 3 blocks. Something like {"code":0,"msg":"success","data" would fit that range, suggesting the response includes more fields than just a simple status code.
+
+Now I'm wondering if I can use the identical ciphertext blocks across flows 9, 12, and 13 to break the encryption without knowing the key. The request body just contains the encrypted data as ed, and depending on the endpoint, that decrypted payload could be OAuth parameters like auth codes and state, or it could be authentication credentials like tokens and user IDs. Let me examine entry 4 in the binary more closely to see if there's a key stored there.
+
+Looking
+
+حدث ملف الذاكرة الان علشان لو حصل حاجة ميضعش الشغل
+
+31 minutes ago
+
+Documenting encryption findings (14 seconds)
+بحدّث ملف الذاكرة فوراً مع كل الاكتشافات:
+
+
+4 actions
+الذاكرة اتحدثت. خليني أكمل البحث - أفحص الـ .so files الأخرى في الـ APK وأحلل الـ getDk function بشكل أدق، وأشوف response ed لـ flows المتكررة:
+
+
+4 actions
+خليني أحلل الـ VJMQ response بالبايتات الفعلية وأفحص الـ .so files الأخرى:
+
+
+Show less
+
+Ran node
+
+Ran ls
+
+Planning decryption key recovery strategy (131 seconds)
+اكتشاف مهم! الـ responses هي GZIP compressed! Flow 8 response = {"ed":"kh/RUBJ+..."} = okCT بتاعنا. الآن أحتاج أفهم لماذا لم تنجح محاولاتنا - خليني أفحص الـ .so libraries الأخرى وأجرب الـ known-plaintext attack بشكل أدق:
+
+
+3 actions
+هناك libsigner.so - .so file ثاني لم نفحصه! هذا قد يحتوي على الـ key أو IV. خليني أفحصه فوراً مع XAPK structure:
+
+
+5 actions
+libsigner.so is the Adjust SDK. الأهم: الـ XAPK يحتوي split APKs إضافية! خليني أفحص الـ assets وابحث عن keys مخفية هناك:
+
+
+4 actions
+هناك 33 .so file في config.armeabi_v7a.apk - معظمها third-party (Agora, SUD, Bugly). الـ libndklib-common.so هو الوحيد المخصص لـ Ditto.
+
+المشكلة الجذرية: كل محاولات الـ decryption فشلت. الحل الآن هو قراءة DEX bytecode لـ JniAesKit مباشرة لمعرفة كيفية استخدام الـ key والـ IV بالضبط:
+
+
+5 actions
+DEX parsing timed out. أجرب نهج أسرع - strings مباشرة على الـ DEX للأجزاء المهمة، وأختبر MD5 of key STRING (ليس bytes) مع zero IV:
+
+
+3 actions
+اكتشاف حاسم! هناك عدة getIv* functions مختلفة لكل feature! المشكلة أن الـ IV ليس ثابتاً لكل الـ endpoints. خليني أجد أسماء الـ JNI functions في الـ .so وأعرف أي IV يُستخدم مع الـ HTTP API:
+
+
+3 actions
+اكتشاف حاسم! الـ class الحقيقي هو com.juxiao.jni.JniUtils (ليس ditto_framework!) وهناك getAkIv - function منفصلة للـ IV! يعني:
+
+getAk = API encryption key
+getAkIv = the IV for HTTP API encryption!
+خليني أفحص هذين الـ functions في الـ .so وأبحث عن JniUtils في الـ DEX:
+
+
+3 actions
+MAJOR BREAKTHROUGH! الـ functions المهمة هي getAk وgetAkIv وليس getDk! وgetAkIv تستخدم entries 16 و17 من الـ .data section. خليني أفحص الـ .data entries الفعلية وأجرب sliding window:
+
+
+3 actions
+اكتشاف مهم! الـ sliding window استخدم الـ raw bytes من الـ .so لكن الـ XOR key لكل entry مختلف. لازم أعمل decode لكل entry الأول ثم أجرب الـ decoded bytes كـ IV. أيضاً: ما زلنا ما عرفنا الـ getAk key! خليني أفحص الـ literal pool الخاص بها وأعمل decoded sliding window:
+
+
+Show less
+
+Ran #
+
+Ran #
+
+Analyzing decryption failure patterns (17 seconds)
+كل المحاولات فشلت. الـ offsets في literal pool لـ getAk تعطي VA < 0xC000. يعني mapping بين الـ VA والـ file offset مختلف! خليني أفحص program headers الـ ELF لمعرفة الـ mapping الصحيح:
+
+
+3 actions
+الآن فهمت! الـ .got section عند VA=0xBFA8 (file=0x7FA8)! وـ getAk تقرأ من .got وليس من .data. الـ .got entries تُملأ بواسطة dynamic linker وقت التشغيل. خليني أفحص .got وأفهم كيف تعمل getAk فعلاً:
+
+
+3 actions
+EUREKA finding! The getAk literal pool gives VA 0xBFB0 which is in .got (all zeros in file = filled at runtime by linker). The function is 700 bytes of complex logic. Also noticed: entry 26 "com.ditto.mobile" is EXACTLY 16 chars - could be IV! Let me test all untried candidates comprehensively:
+
+
+4 actions
+CRITICAL BUG FOUND! The okCT plaintext {"code":0,"msg":"ok"} + 11 bytes of 0x0B padding = only 20/32 = 0.65 printability score! Our threshold was 0.72 - TOO HIGH! We may have been discarding the correct decryption! Let me redo with setAutoPadding(true) and check for { as first byte:
+
+
+2 actions
+You've reached your daily free quota limit. It will reset at 12:00 AM UTC.
