@@ -1,0 +1,145 @@
+"أنا أقوم بتحليل تطبيق أندرويد (Reverse Engineering) وقد حددت أن التطبيق يستخدم تشفيرًا على مستوى بيانات الـ JSON (Application Layer Encryption)، حيث يتم إرسال واستقبال البيانات المشفرة داخل حقل باسم 'ed'.
+
+المطلوب منك تنفيذ الآتي:
+
+تحليل الكود المرفق: قمت باستخراج كود الـ Java/Smali الخاص بالتعامل مع التشفير أو كلاسات الـ API. يرجى تحليله بدقة لفهم كيفية بناء الـ payload.
+
+تحديد الخوارزمية: استخرج نوع خوارزمية التشفير المستخدمة (مثل AES/CBC، AES/GCM، إلخ) ومواصفات الـ Padding.
+
+استخراج المفتاح (Key) والـ IV: ابحث عن المفتاح (Key) والـ Initialization Vector (IV). إذا كانت ثابتة (Hardcoded) في الكود، قم باستخراجها. إذا كانت تُشتق من قيم أخرى (مثل تحويل كلمة مرور أو توقيت)، اشرح لي آلية الاشتقاق (Key Derivation).
+
+سكربت فك التشفير: بناءً على ما سبق، قم بكتابة سكربت بلغة Python يقوم بفك تشفير القيمة الموجودة في حقل 'ed' وتحويلها إلى JSON مقروء (Decrypted JSON).
+
+"أنا أقوم بعمل Reverse Engineering لتطبيق أندرويد واستخرجت الكود المرفق. التطبيق يستخدم تشفير AES لتشفير الـ JSON في حقل يسمى 'ed' عند إرسال واستقبال البيانات من الـ API (getTRtcToken).
+
+المطلوب منك:
+
+تحليل الكود المرفق لتحديد خوارزمية التشفير (Mode, Padding)، واستخراج مفتاح التشفير (Key) و الـ IV (إذا كانا ثابتين).
+
+شرح آلية عمل دالة فك التشفير (Decryption Logic).
+
+كتابة سكربت Python كامل يستخدم مكتبة pycryptodome ليقوم بفك تشفير أي قيمة 'ed' أضعها له واستخراج الـ JSON الأصلي.
+
+ملاحظة: الـ Payload المشفر الذي أحاول فك تشفيره هو:
+cEv/pIPnU8Ebmn2Z0EgQasesl/RuJMn/NffZtuQw+ZDMJvcny4fL8NhM8NCennBlJOtFiqA0N1LUxvm6f0+bBhCHe7NCti6/YCrz7T60yoxxneSnHD28s+ITSeDXDT4n/Ozs0A0GekKrxAX5iCG32SCFaWE0ksi5wOrAUnFzE3kFb2KmokgNy7uUokSKvV/yBBcE/moKnZT+0t7UfpheBtmGs2ctj8oqRZDXb6Yvi7qL3lvX6Wa2/RA7dBS2RNadGzScfSY5/ozoJVeMQoxdytX1OQqcnBerZO/5hSXlgvnB2XsoSTkF0PQHG82HpFgk
+
+
+Show more
+48 minutes ago
+
+1 message & 1 action
+الكود اللى هو التطبيق المفكود المفلفات عندك
+
+47 minutes ago
+
+4 messages & 11 actions
+
+Worked for 45 seconds
+طب خد وفكه تاني وطلع الكود اللى انت عايزه
+
+43 minutes ago
+
+3 actions
+https://github.com/hmdagency3-boop/-.git
+
+42 minutes ago
+
+Show less
+
+7 actions
+الملف XAPK موجود بس حجمه 134 byte — ده معناه إنه Git LFS pointer، مش الملف الحقيقي. خليني أحاول أجيبه.
+
+
+3 actions
+الملف 154MB على Git LFS. هحاول أجيبه عن طريق LFS API.
+
+
+2 actions
+ممتاز! جبت الـ download URL. هنزّل الـ XAPK ونفكه.
+
+
+2 actions
+تم التحميل! دلوقتي هنفك الـ XAPK ونستخرج كود التشفير.
+
+
+3 actions
+محتاج أثبّت Java وأدوات الـ decompile الأول.
+
+
+5 actions
+ممتاز! لقينا الـ APK الرئيسي. دلوقتي هنحمّل JADX ونفك الكود.
+
+
+17 actions
+JADX بيـ crash. هستخدم نهج مختلف — نستخرج الـ DEX مباشرة ونعمل strings search.
+
+
+2 actions
+الآن نبحث عن كلاسات التشفير بالـ strings مباشرةً في الـ DEX.
+
+
+3 actions
+لقيت حاجات مهمة. دلوقتي هبحث عن كود التشفير الخاص بالتطبيق نفسه.
+
+
+4 actions
+لقيت إن التطبيق بيستخدم com.ditto.ditto_core. دلوقتي هدور على كلاس التشفير الخاص بالتطبيق نفسه.
+
+
+7 actions
+وجدت الكلاس المهم: ParamsInterceptor. هيبع بنشيل الـ baksmali ونفك كود التشفير منه.
+
+
+3 actions
+وجدت الكلاس المحوري: com.ditto.ditto_framework.aes.JniAesKit — ده AES بالـ JNI (native code)! وParamsInterceptor. هنفك الاتنين.
+
+
+4 actions
+وجدت JniAesKit — التشفير بيستخدم JNI (native library). المفتاح في ملف الـ .so. هنستخرجه دلوقتي.
+
+
+9 actions
+baksmali بيـ segfault بسبب Java version. هنستخدم نهج مختلف — نستخرج libndklib-common.so (المكتبة الخاصة بـ Ditto، 35KB فقط) وندور فيها على المفتاح.
+
+
+3 actions
+تأكدنا: ndklib-common هي المكتبة المستخدمة في JniAesKit. هنعمل strings عليها ونفك منطق التشفير.
+
+
+3 actions
+ممتاز جداً! وجدت الـ JNI functions:
+
+getAk (AES Key), getAkIv (AES IV), getDk (Decrypt Key), getEk (Encrypt Key)
+لكن الـ strings مشفرة بـ Obfuscator-LLVM datadiv. هنحلل الـ DEX بالـ Python لنفهم Flow التشفير الكامل.
+
+
+4 actions
+ممتاز! وجدت الـ functions: getAk, getAkIv, getEk, getDk. دلوقتي هنحلل الـ .so binary بالـ Python لنستخرج المفاتيح المشفرة.
+
+
+3 actions
+Python بيـ segfault. هستخدم Node.js بدلاً منه — هو متاح بالفعل.
+
+
+3 actions
+الـ keys مشفرة بـ datadiv في الـ .so. هنحلل الـ ELF binary وكمان libsigner.so بشكل متوازي.
+
+
+4 actions
+وجدت الـ .data section في offset 0x8000 بحجم 1057 bytes — دي بالضبط المكان اللي المفاتيح المشفرة محتفظة فيه. هندمبها ونحلل الـ datadiv decode function.
+
+
+3 actions
+الآن هنحلل الـ XOR encoding في الـ .data section وهنستخرج المفاتيح.
+
+
+3 actions
+هنتبع نهج مختلف — هندمب كود getEk كامل ونفك العناوين اللي بيرجعها.
+
+
+3 actions
+هحاول نهج مختلف — نستخدم QEMU لـ ARM emulation لتشغيل الـ .so واستخراج المفاتيح مباشرة.
+
+
+5 actions
+Agent encountered an error while running, we are investigating the issue.
