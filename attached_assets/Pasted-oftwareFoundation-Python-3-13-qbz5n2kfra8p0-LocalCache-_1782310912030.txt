@@ -1,0 +1,25 @@
+oftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from frida-tools==12.5.0) (0.4.6)
+Requirement already satisfied: prompt-toolkit<4.0.0,>=2.0.0 in .\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from frida-tools==12.5.0) (3.0.52)
+Requirement already satisfied: pygments<3.0.0,>=2.0.2 in .\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from frida-tools==12.5.0) (2.20.0)
+Requirement already satisfied: wcwidth in .\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from prompt-toolkit<4.0.0,>=2.0.0->frida-tools==12.5.0) (0.8.1)
+Downloading frida-16.5.9-cp37-abi3-win_amd64.whl (33.6 MB)
+   ---------------------------------------- 33.6/33.6 MB 1.4 MB/s  0:00:24
+Building wheels for collected packages: frida-tools
+  Building wheel for frida-tools (pyproject.toml) ... done
+  Created wheel for frida-tools: filename=frida_tools-12.5.0-py3-none-any.whl size=210290 sha256=02dad54e435ad47e0a723383fb103a4e98916de91b499c79e92051979747829c
+  Stored in directory: c:\users\jony\appdata\local\packages\pythonsoftwarefoundation.python.3.13_qbz5n2kfra8p0\localcache\local\pip\cache\wheels\92\b1\b9\43aa84b2662524bc797498da55a323503d9368c8d749f53b2b
+Successfully built frida-tools
+Installing collected packages: frida, frida-tools
+  Attempting uninstall: frida
+    Found existing installation: frida 17.15.3
+    Uninstalling frida-17.15.3:
+      Successfully uninstalled frida-17.15.3
+  Attempting uninstall: frida-tools
+    Found existing installation: frida-tools 14.10.2
+    Uninstalling frida-tools-14.10.2:
+      Successfully uninstalled frida-tools-14.10.2
+   -------------------- ------------------- 1/2 [frida-tools]  WARNING: The scripts frida-apk.exe, frida-compile.exe, frida-create.exe, frida-discover.exe, frida-itrace.exe, frida-join.exe, frida-kill.exe, frida-ls-devices.exe, frida-ls.exe, frida-ps.exe, frida-pull.exe, frida-push.exe, frida-rm.exe, frida-trace.exe and frida.exe are installed in 'C:\Users\jony\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\Scripts' which is not on PATH.
+  Consider adding this directory to PATH or, if you prefer to suppress this warning, use --no-warn-script-location.
+Successfully installed frida-16.5.9 frida-tools-12.5.0
+
+C:\Users\jony>
