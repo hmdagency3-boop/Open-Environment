@@ -1,34 +1,25 @@
 'use strict';
 /**
- * Ditto API Client
- * استخدام APIs التطبيق خارجياً
+ * Ditto API Client - WORKING
+ * AES Key: a38e5f04f39b11ed | IV: 884e00163e02b26e
  *
  * Usage:
- *   node ditto_api.js login <phone_or_uid> <access_token>
- *   node ditto_api.js call <endpoint> [key=value ...]
- *   node ditto_api.js decrypt <base64>
+ *   node ditto_api.js call /purse/query
+ *   node ditto_api.js call /fans/list pageNum=1 pageSize=20
+ *   node ditto_api.js decrypt "<base64>"
+ *   node ditto_api.js session
  */
 
 const crypto = require('crypto');
 const https  = require('https');
+const zlib   = require('zlib');
 const fs     = require('fs');
 
-// ── AES Keys (confirmed via Frida) ──────────────────────────────────────────
 const KEY  = Buffer.from('a38e5f04f39b11ed', 'ascii');
 const IV   = Buffer.from('884e00163e02b26e', 'ascii');
 const ALGO = 'aes-128-cbc';
 const HOST = 'www.sayyouditto.com';
-
-// ── Session storage ──────────────────────────────────────────────────────────
 const SESSION_FILE = './ditto_session.json';
-
-function loadSession() {
-  try { return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8')); }
-  catch(e) { return {}; }
-}
-function saveSession(s) {
-  fs.writeFileSync(SESSION_FILE, JSON.stringify(s, null, 2));
-}
 
 // ── Crypto ───────────────────────────────────────────────────────────────────
 function encrypt(plain) {
@@ -42,22 +33,27 @@ function decrypt(b64) {
   s = s.replace(/-/g, '+').replace(/_/g, '/');
   while (s.length % 4) s += '=';
   const ct = Buffer.from(s, 'base64');
-  if (ct.length === 0 || ct.length % 16 !== 0)
-    throw new Error(`Bad ciphertext length: ${ct.length}`);
+  if (!ct.length || ct.length % 16 !== 0) throw new Error(`Bad ciphertext length: ${ct.length}`);
   const d = crypto.createDecipheriv(ALGO, KEY, IV);
   return Buffer.concat([d.update(ct), d.final()]).toString('utf8');
 }
 
-// ── HTTP ─────────────────────────────────────────────────────────────────────
-function randomSn() {
-  return crypto.randomBytes(4).toString('hex').slice(0, 7);
+// ── Session ───────────────────────────────────────────────────────────────────
+function loadSession() {
+  try { return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8')); }
+  catch(e) { return {}; }
+}
+function saveSession(s) {
+  fs.writeFileSync(SESSION_FILE, JSON.stringify(s, null, 2));
+  console.log('\n✅ Session saved:', JSON.stringify(s, null, 2));
 }
 
+// ── HTTP ─────────────────────────────────────────────────────────────────────
 function makeHeaders(extra = {}) {
   return {
-    'content-type':    'application/x-www-form-urlencoded',
-    'accept-encoding': 'gzip',
     'user-agent':      'okhttp/4.9.0',
+    'accept-encoding': 'gzip',
+    'content-type':    'application/x-www-form-urlencoded',
     'simulator':       'physical',
     'language':        '1',
     'appcode':         '1030400',
@@ -69,204 +65,176 @@ function makeHeaders(extra = {}) {
     'appversion':      '1.3.4.0',
     'osversion':       '13',
     't':               Date.now().toString(),
-    'sn':              randomSn(),
+    'sn':              crypto.randomBytes(4).toString('hex').slice(0, 7),
     ...extra,
   };
 }
 
-function request(method, path, bodyParams = null) {
+function httpRequest(method, path, body = null) {
   return new Promise((resolve, reject) => {
-    // Encrypt body params if provided
-    let body = null;
-    if (bodyParams) {
-      const plain = typeof bodyParams === 'string'
-        ? bodyParams
-        : new URLSearchParams(bodyParams).toString();
-      const enc = encrypt(plain);
-      body = 'ed=' + encodeURIComponent(enc);
-    }
-
     const headers = makeHeaders();
     if (body) headers['content-length'] = Buffer.byteLength(body).toString();
 
-    const opts = {
-      hostname: HOST,
-      port: 443,
-      path,
-      method,
-      headers,
-    };
-
-    const req = https.request(opts, res => {
+    const req = https.request({ hostname: HOST, port: 443, path, method, headers }, res => {
       const chunks = [];
       res.on('data', c => chunks.push(c));
       res.on('end', () => {
         let raw = Buffer.concat(chunks);
-        // Handle gzip
         if (res.headers['content-encoding'] === 'gzip') {
-          try {
-            const zlib = require('zlib');
-            raw = zlib.gunzipSync(raw);
-          } catch(e) {}
+          try { raw = zlib.gunzipSync(raw); } catch(e) {}
         }
-        const text = raw.toString('utf8');
-        try {
-          const json = JSON.parse(text);
-          // Decrypt ed field if present
-          if (json.ed) {
-            try {
-              const plain = decrypt(json.ed);
-              const parsed = JSON.parse(plain);
-              resolve({ raw: json, data: parsed, path });
-            } catch(e) {
-              resolve({ raw: json, data: null, decryptError: e.message, path });
-            }
-          } else {
-            resolve({ raw: json, data: json, path });
-          }
-        } catch(e) {
-          resolve({ raw: text, data: null, path });
-        }
+        resolve({ status: res.statusCode, body: raw.toString('utf8') });
       });
     });
-
     req.on('error', reject);
     if (body) req.write(body);
     req.end();
   });
 }
 
-// ── API Calls ────────────────────────────────────────────────────────────────
+async function apiCall(method, path, params = null) {
+  let fullPath = path;
+  let body = null;
 
-// Step 1: Login with social access_token (type=6 = تسجيل دخول بالهاتف)
-async function login(accessToken, uid = '', unionId = '') {
-  console.log('\n[1] Logging in...');
-  const res = await request('POST', '/acc/third/login', {
-    access_token: accessToken,
-    unionId:      unionId || accessToken,
-    type:         '6',
-    phone:        accessToken,
-    turingToken:  '',
-  });
-  console.log('Login response:', JSON.stringify(res.data || res.raw, null, 2));
-
-  if (res.data && res.data.code === 200) {
-    const d = res.data.data;
-    // Step 2: Get ticket
-    await getTicket(d.access_token, d.uid, d.deviceId);
-  }
-  return res;
-}
-
-// Step 2: Exchange access_token for ticket
-async function getTicket(accessToken, uid, deviceId) {
-  console.log('\n[2] Getting ticket...');
-  const res = await request('POST', '/oauth/ticket', {
-    access_token: accessToken,
-    deviceId:     deviceId || '27e0073c1e0d132a0b66a84ff8ada5baa',
-    issue_type:   'multi',
-    simCountry:   'eg',
-  });
-  console.log('Ticket response:', JSON.stringify(res.data || res.raw, null, 2));
-
-  if (res.data && res.data.code === 200) {
-    const session = {
-      ticket:   res.data.data.ticket,
-      uid:      uid,
-      deviceId: deviceId || '27e0073c1e0d132a0b66a84ff8ada5baa',
-    };
-    saveSession(session);
-    console.log('\n✅ Session saved to', SESSION_FILE);
-    console.log('   ticket:', session.ticket);
-    console.log('   uid:   ', session.uid);
-  }
-  return res;
-}
-
-// Generic API call using saved session
-async function apiCall(endpoint, extraParams = {}) {
-  const session = loadSession();
-  if (!session.ticket) {
-    console.error('❌ No session found. Run: node ditto_api.js login <token>');
-    return;
+  if (params) {
+    const plain = new URLSearchParams(params).toString();
+    const enc = encrypt(plain);
+    if (method === 'GET') {
+      fullPath = path + '?ed=' + encodeURIComponent(enc);
+    } else {
+      body = 'ed=' + encodeURIComponent(enc);
+    }
   }
 
-  const params = {
-    ticket:   session.ticket,
-    uid:      session.uid,
-    deviceId: session.deviceId,
-    simCountry: 'eg',
-    ...extraParams,
-  };
+  console.log(`\n→ ${method} https://${HOST}${fullPath}`);
+  const res = await httpRequest(method, fullPath, body);
 
-  const method = endpoint.includes('?') || Object.keys(extraParams).length === 0 ? 'GET' : 'POST';
-  const path = method === 'GET'
-    ? endpoint + '?ed=' + encodeURIComponent(encrypt(new URLSearchParams(params).toString()))
-    : endpoint;
-
-  console.log(`\n[API] ${method} ${path}`);
-  const res = await method === 'GET'
-    ? request('GET', path)
-    : request('POST', path, params);
-
-  console.log('Response:', JSON.stringify(res.data || res.raw, null, 2));
-  return res;
+  // Parse and decrypt response
+  try {
+    const json = JSON.parse(res.body);
+    if (json.ed) {
+      const plain = decrypt(json.ed);
+      const data = JSON.parse(plain);
+      return data;
+    }
+    return json;
+  } catch(e) {
+    console.error('Response error:', e.message, '| Raw:', res.body.substring(0, 200));
+    return null;
+  }
 }
 
-// ── CLI ───────────────────────────────────────────────────────────────────────
+// ── Known Endpoints ───────────────────────────────────────────────────────────
+const ENDPOINTS = {
+  '/purse/query':    { method: 'GET',  desc: 'رصيد المحفظة (ذهب، ماس، عملات)' },
+  '/home/v2/index':  { method: 'GET',  desc: 'الصفحة الرئيسية' },
+  '/fans/list':      { method: 'GET',  desc: 'قائمة المتابعين' },
+  '/user/info':      { method: 'GET',  desc: 'معلومات المستخدم' },
+  '/home/v2/list':   { method: 'GET',  desc: 'قائمة البث المباشر' },
+  '/oauth/ticket':   { method: 'POST', desc: 'تجديد الـ ticket' },
+};
+
+// ── Commands ──────────────────────────────────────────────────────────────────
 async function main() {
   const args = process.argv.slice(2);
   const cmd  = args[0];
 
   if (!cmd || cmd === 'help') {
-    console.log(`
-Ditto API Client — Commands:
-  login <access_token>          تسجيل دخول وحفظ الـ session
-  call <endpoint> [k=v ...]    استدعاء أي API endpoint
-  decrypt <base64>              فك تشفير أي ed value
-  session                       عرض الـ session المحفوظ
-
-Examples:
-  node ditto_api.js login 20-01113496139
-  node ditto_api.js call /home/v2/index
-  node ditto_api.js call /purse/query
-  node ditto_api.js call /fans/list pageNum=1 pageSize=20
-  node ditto_api.js decrypt "kh/RUBJ+TiH7EuBmeN0MN..."
-    `);
-    return;
-  }
-
-  if (cmd === 'decrypt') {
-    try {
-      const result = decrypt(args[1]);
-      console.log('Decrypted:', result);
-    } catch(e) { console.error('Error:', e.message); }
+    console.log('\n=== Ditto API Client ===');
+    console.log('Key: a38e5f04f39b11ed | IV: 884e00163e02b26e\n');
+    console.log('Commands:');
+    console.log('  node ditto_api.js session                    عرض الـ session');
+    console.log('  node ditto_api.js call <endpoint> [k=v ...]  استدعاء API');
+    console.log('  node ditto_api.js decrypt "<base64>"          فك تشفير');
+    console.log('  node ditto_api.js encrypt "plain text"        تشفير\n');
+    console.log('Endpoints المتاحة:');
+    Object.entries(ENDPOINTS).forEach(([path, info]) => {
+      console.log(`  ${path.padEnd(20)} ${info.desc}`);
+    });
     return;
   }
 
   if (cmd === 'session') {
     const s = loadSession();
-    console.log(s.ticket ? '✅ Session loaded:' : '❌ No session:', JSON.stringify(s, null, 2));
+    if (s.ticket) {
+      console.log('✅ Session:', JSON.stringify(s, null, 2));
+    } else {
+      console.log('❌ No session. Get ticket from Frida output and add to', SESSION_FILE);
+    }
     return;
   }
 
-  if (cmd === 'login') {
-    await login(args[1], args[2], args[3]);
+  if (cmd === 'decrypt') {
+    try { console.log('Decrypted:', decrypt(args[1])); }
+    catch(e) { console.error('Error:', e.message); }
+    return;
+  }
+
+  if (cmd === 'encrypt') {
+    console.log('Encrypted:', encrypt(args.slice(1).join(' ')));
     return;
   }
 
   if (cmd === 'call') {
+    const session = loadSession();
+    if (!session.ticket) {
+      console.error('❌ No session found. Add ticket to', SESSION_FILE);
+      return;
+    }
+
     const endpoint = args[1];
-    const extra = {};
+    if (!endpoint) { console.error('❌ Provide an endpoint, e.g.: /purse/query'); return; }
+
+    // Base params from session
+    const params = {
+      ticket:     session.ticket,
+      uid:        session.uid,
+      deviceId:   session.deviceId,
+      simCountry: 'eg',
+    };
+
+    // Extra params from CLI
     args.slice(2).forEach(kv => {
-      const [k, v] = kv.split('=');
-      if (k && v !== undefined) extra[k] = v;
+      const [k, ...rest] = kv.split('=');
+      if (k) params[k] = rest.join('=');
     });
-    await apiCall(endpoint, extra);
+
+    const info = ENDPOINTS[endpoint];
+    const method = info ? info.method : 'GET';
+
+    const result = await apiCall(method, endpoint, params);
+    if (result) {
+      console.log('\n✅ Response:');
+      console.log(JSON.stringify(result, null, 2));
+    }
     return;
   }
 
-  console.error('Unknown command:', cmd);
+  if (cmd === 'refresh') {
+    // Refresh ticket using saved access_token
+    const session = loadSession();
+    if (!session.access_token) {
+      console.error('❌ No access_token in session');
+      return;
+    }
+    const result = await apiCall('POST', '/oauth/ticket', {
+      access_token: session.access_token,
+      deviceId:     session.deviceId,
+      issue_type:   'multi',
+      simCountry:   'eg',
+    });
+    if (result && result.code === 200) {
+      const ticket = result.data.tickets[0].ticket;
+      session.ticket = ticket;
+      saveSession(session);
+      console.log('✅ New ticket:', ticket);
+    } else {
+      console.log('Response:', JSON.stringify(result));
+    }
+    return;
+  }
+
+  console.error('Unknown command:', cmd, '— run without args for help');
 }
 
 main().catch(console.error);
