@@ -1,34 +1,38 @@
 'use strict';
 /**
- * Ditto API Client
+ * Ditto API Client — re-work/ditto_api.js
  * AES Key: a38e5f04f39b11ed | IV: 884e00163e02b26e
  *
  * الاستخدام:
- *   node ditto_api.js login <phone> <token_type>   تسجيل دخول (one-time)
- *   node ditto_api.js session                       عرض الـ session الحالية
- *   node ditto_api.js call <endpoint> [k=v ...]    استدعاء API (يجدد ticket تلقائياً)
- *   node ditto_api.js decrypt "<base64>"            فك تشفير يدوي
- *   node ditto_api.js encrypt "plain text"          تشفير يدوي
+ *   node re-work/ditto_api.js session                       عرض الـ session الحالية
+ *   node re-work/ditto_api.js login <access_token> <uid>    حفظ session
+ *   node re-work/ditto_api.js refresh                       تجديد ticket يدوياً
+ *   node re-work/ditto_api.js daemon                        تجديد ticket كل 55 دقيقة
+ *   node re-work/ditto_api.js call <endpoint> [k=v ...]     استدعاء API
+ *   node re-work/ditto_api.js decrypt "<base64>"            فك تشفير
+ *   node re-work/ditto_api.js encrypt "plain text"          تشفير
+ *   node re-work/ditto_api.js flows                         استعراض بيانات من الـ flows المحفوظة
  *
- * دورة الـ tokens:
- *   access_token  ──(صالح 30 يوم)──►  يُستخدم لجلب ticket
- *   ticket        ──(صالح 1 ساعة)──►  يُرسل مع كل طلب
- *   auto-refresh: قبل أي call، نتحقق من ticket ونجدده إذا لزم
+ * ⚠️  ملاحظة الـ version-lock:
+ *   بعض الـ endpoints ترجع 10003 "Please update app version" عند الاستدعاء من Replit
+ *   بسبب CDN geo-routing — نفس الـ endpoints تعمل من NOX/Android محلياً.
+ *   الـ endpoints المؤكدة من flows_(2) و flows_(3) مسجّلة في FLOWS_ONLY.
  */
 
 const crypto = require('crypto');
 const https  = require('https');
 const zlib   = require('zlib');
 const fs     = require('fs');
+const path   = require('path');
 
 const KEY  = Buffer.from('a38e5f04f39b11ed', 'ascii');
 const IV   = Buffer.from('884e00163e02b26e', 'ascii');
 const ALGO = 'aes-128-cbc';
 const HOST = 'www.sayyouditto.com';
-const SESSION_FILE = './ditto_session.json';
+const SESSION_FILE = path.join(__dirname, 'ditto_session.json');
 
-const TICKET_TTL_MS   = 55 * 60 * 1000;  // نجدد بعد 55 دقيقة (قبل الـ 60)
-const ACCESS_TOKEN_TTL_MS = 29 * 24 * 60 * 60 * 1000; // تنبيه بعد 29 يوم
+const TICKET_TTL_MS       = 55 * 60 * 1000;
+const ACCESS_TOKEN_TTL_MS = 29 * 24 * 60 * 60 * 1000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Crypto
@@ -67,13 +71,13 @@ function printSession(s) {
   console.log('  uid          :', s.uid);
   console.log('  deviceId     :', s.deviceId);
   if (s.ticket) {
-    const ticketAge = s.ticket_saved_at ? Math.round((now - s.ticket_saved_at) / 60000) : '?';
+    const ticketAge  = s.ticket_saved_at ? Math.round((now - s.ticket_saved_at) / 60000) : '?';
     const ticketLeft = s.ticket_saved_at ? Math.round((TICKET_TTL_MS - (now - s.ticket_saved_at)) / 60000) : '?';
     console.log('  ticket       :', s.ticket);
     console.log('  ticket age   :', ticketAge + ' min  (صالح لـ ' + ticketLeft + ' دقيقة أخرى)');
   }
   if (s.access_token) {
-    const atAge = s.access_token_saved_at ? Math.round((now - s.access_token_saved_at) / 86400000) : '?';
+    const atAge  = s.access_token_saved_at ? Math.round((now - s.access_token_saved_at) / 86400000) : '?';
     const atLeft = s.access_token_saved_at ? Math.round((ACCESS_TOKEN_TTL_MS - (now - s.access_token_saved_at)) / 86400000) : '?';
     console.log('  access_token :', s.access_token.slice(0, 16) + '...');
     console.log('  token age    :', atAge + ' days  (صالح لـ ' + atLeft + ' يوم أخرى)');
@@ -103,14 +107,14 @@ function makeHeaders(extra = {}) {
   };
 }
 
-function httpRaw(method, path, body = null) {
+function httpRaw(method, reqPath, body = null) {
   return new Promise((resolve, reject) => {
     const extra = body
       ? { 'content-type': 'application/x-www-form-urlencoded', 'content-length': Buffer.byteLength(body).toString() }
       : {};
     const headers = makeHeaders(extra);
 
-    const req = https.request({ hostname: HOST, port: 443, path, method, headers }, res => {
+    const req = https.request({ hostname: HOST, port: 443, path: reqPath, method, headers }, res => {
       const chunks = [];
       res.on('data', c => chunks.push(c));
       res.on('end', () => {
@@ -127,21 +131,21 @@ function httpRaw(method, path, body = null) {
   });
 }
 
-async function apiCall(method, path, params = null, { silent = false } = {}) {
-  let fullPath = path;
+async function apiCall(method, endpoint, params = null, { silent = false } = {}) {
+  let fullPath = endpoint;
   let body = null;
 
   if (params) {
     const plain = new URLSearchParams(params).toString();
     const enc = encrypt(plain);
     if (method === 'GET') {
-      fullPath = path + '?ed=' + encodeURIComponent(enc);
+      fullPath = endpoint + '?ed=' + encodeURIComponent(enc);
     } else {
       body = 'ed=' + encodeURIComponent(enc);
     }
   }
 
-  if (!silent) console.log('\n→', method, 'https://' + HOST + path);
+  if (!silent) console.log('\n→', method, 'https://' + HOST + endpoint);
 
   const res = await httpRaw(method, fullPath, body);
 
@@ -168,16 +172,12 @@ async function refreshTicket(session) {
     access_token: session.access_token,
     deviceId:     session.deviceId,
     issue_type:   'multi',
-    uid:          session.uid,
     simCountry:   'eg',
   }, { silent: true });
 
   if (!result || result.code !== 200) {
     const msg = result?.message || 'Unknown error';
-    if (msg.includes('update app version')) {
-      throw new Error('access_token انتهت صلاحيتها — ادخل مرة أخرى بـ: node ditto_api.js login');
-    }
-    throw new Error('Ticket refresh failed: ' + msg);
+    throw new Error('Ticket refresh failed: ' + msg + ' (code ' + result?.code + ')');
   }
 
   const newTicket = result.data.tickets[0].ticket;
@@ -191,7 +191,6 @@ async function refreshTicket(session) {
 async function ensureTicket(session) {
   const now = Date.now();
   const age = now - (session.ticket_saved_at || 0);
-
   if (!session.ticket || age > TICKET_TTL_MS) {
     await refreshTicket(session);
   }
@@ -199,28 +198,7 @@ async function ensureTicket(session) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Login
-// ─────────────────────────────────────────────────────────────────────────────
-async function doLogin(phone, deviceId) {
-  // Ditto uses type=6 (phone login)
-  // يحتاج turingToken لكن نجرب بدونه أولاً
-  const params = {
-    phone,
-    type: '6',
-    access_token: phone,
-    unionId: phone,
-    deviceId,
-    simCountry: 'eg',
-    appversion: '1.3.4.0',
-  };
-
-  console.log('→ POST /acc/third/login');
-  const result = await apiCall('POST', '/acc/third/login', params, { silent: true });
-  return result;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Daemon mode — يشغل في الخلفية ويجدد ticket كل 55 دقيقة
+// Daemon mode
 // ─────────────────────────────────────────────────────────────────────────────
 async function daemonMode() {
   console.log('🤖 Daemon mode — يجدد ticket تلقائياً كل 55 دقيقة');
@@ -229,7 +207,7 @@ async function daemonMode() {
   async function tick() {
     const session = loadSession();
     if (!session.access_token) {
-      console.error('❌ No session. Run: node ditto_api.js login');
+      console.error('❌ No session. Run: node re-work/ditto_api.js login <access_token> <uid>');
       process.exit(1);
     }
     try {
@@ -247,22 +225,69 @@ async function daemonMode() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Known Endpoints
 // ─────────────────────────────────────────────────────────────────────────────
+// ✅ = يعمل من Replit
+// ⚡ = يعمل من NOX/Android فقط (10003 من Replit بسبب CDN geo-routing)
 const ENDPOINTS = {
-  '/purse/query':               { method: 'GET',  desc: 'رصيد المحفظة (ذهب، ماس، عملات)' },
-  '/user/v3/get':               { method: 'GET',  desc: 'بيانات المستخدم الكاملة' },
-  '/banned/checkBanned':        { method: 'GET',  desc: 'هل المستخدم محظور؟' },
-  '/home/v1/list':              { method: 'GET',  desc: 'قائمة البث المباشر' },
-  '/home/tab/room':             { method: 'GET',  desc: 'تابات الغرف والبانرات' },
-  '/gift/listV3':               { method: 'GET',  desc: 'قائمة الهدايا والأسعار' },
-  '/gift/listPackage':          { method: 'GET',  desc: 'باقات الهدايا' },
-  '/gift/bar/actInlet':         { method: 'GET',  desc: 'أنشطة المحل' },
-  '/silvercoin/getMissionInfo': { method: 'GET',  desc: 'مهام العملات الفضية' },
-  '/blind/box/list':            { method: 'GET',  desc: 'قائمة الصناديق العمياء' },
-  '/explore/info':              { method: 'GET',  desc: 'صفحة الاستكشاف' },
-  '/room/effects/get':          { method: 'GET',  desc: 'إعدادات التأثيرات' },
-  '/sns/moment/list':           { method: 'POST', desc: 'منشورات اجتماعية' },
-  '/match/cleanBusy':           { method: 'POST', desc: 'إيقاف حالة المطابقة' },
-  '/acc/online':                { method: 'POST', desc: 'تسجيل online' },
+  // ── يعمل من Replit ✅ ────────────────────────────────────────────────────
+  '/purse/query':                    { method: 'GET',  desc: '✅ رصيد المحفظة (ذهب، ماس، عملات)' },
+  '/home/v1/list':                   { method: 'GET',  desc: '✅ قائمة البث المباشر' },
+  '/home/tab/room':                  { method: 'GET',  desc: '✅ تابات الغرف | tab=POPULAR/SA/EG/AE pageNum pageSize' },
+  '/gift/listV3':                    { method: 'GET',  desc: '✅ قائمة الهدايا | giftVersion=0' },
+  '/gift/listPackage':               { method: 'GET',  desc: '✅ باقات الهدايا' },
+  '/gift/bar/actInlet':              { method: 'GET',  desc: '✅ أنشطة المحل' },
+  '/silvercoin/getMissionInfo':      { method: 'GET',  desc: '✅ مهام العملات الفضية | type=1' },
+  '/blind/box/list':                 { method: 'GET',  desc: '✅ قائمة الصناديق العمياء' },
+  '/explore/info':                   { method: 'GET',  desc: '✅ صفحة الاستكشاف | pageNo=1 pageSize=20' },
+  '/room/effects/get':               { method: 'GET',  desc: '✅ إعدادات التأثيرات' },
+  '/emoji/emojiData':                { method: 'GET',  desc: '✅ بيانات الإيموجي | pageSize=50' },
+  '/emoji/emojiType':                { method: 'GET',  desc: '✅ أنواع الإيموجي | showPosition=1' },
+  '/modularization/game/list':       { method: 'GET',  desc: '✅ قائمة الألعاب | language=en os=android' },
+  '/activity/query':                 { method: 'GET',  desc: '✅ الأنشطة | type=1' },
+  '/version/getInfo':                { method: 'GET',  desc: '✅ معلومات الإصدار (بدون ticket)' },
+  '/banned/checkBanned':             { method: 'GET',  desc: '✅ هل المستخدم محظور؟' },
+  '/client/country':                 { method: 'GET',  desc: '✅ قائمة الدول' },
+  '/sns/moment/list':                { method: 'POST', desc: '✅ المنشورات | pageNo=1 type=0 pageSize=20' },
+  '/match/cleanBusy':                { method: 'POST', desc: '✅ إيقاف حالة المطابقة' },
+  '/room/lucky/bag/getConf':         { method: 'GET',  desc: '✅ إعدادات الحقيبة المحظوظة' },
+  '/room/lucky/bag/get':             { method: 'GET',  desc: '✅ جلب الحقيبة | roomId=...' },
+  '/room/getRecommendCard':          { method: 'GET',  desc: '✅ بطاقة الغرفة الموصى بها' },
+  '/room/pk/getIsInviteNewMsg':      { method: 'GET',  desc: '✅ رسائل دعوة PK' },
+  '/room/mic/isMicUpApply':          { method: 'GET',  desc: '✅ طلبات المايك | roomId=... type=1' },
+  '/award/email/unread':             { method: 'GET',  desc: '✅ الرسائل غير المقروءة' },
+  '/user/whitelist/info':            { method: 'GET',  desc: '✅ معلومات القائمة البيضاء' },
+  '/client/pop/up/list':             { method: 'GET',  desc: '✅ قائمة النوافذ المنبثقة' },
+  '/home/get/continents':            { method: 'GET',  desc: '✅ قائمة القارات' },
+  '/acc/online':                     { method: 'POST', desc: '✅ تسجيل online' },
+  '/user/update/current/language':   { method: 'POST', desc: '✅ تحديث اللغة | updateLanguage=en' },
+  '/sud/game/user/in':               { method: 'POST', desc: '✅ دخول لعبة SUD' },
+  '/silvercoin/receiveSilverCoin':   { method: 'POST', desc: '✅ استلام عملات فضية | missionId=...' },
+  '/fans/following':                 { method: 'GET',  desc: '✅ قائمة المتابَعين | pageNo=1 pageSize=20' },
+  '/fans/islike':                    { method: 'GET',  desc: '✅ هل يتابعه؟ | isLikeUid=...' },
+  '/client/my/banner':               { method: 'GET',  desc: '✅ بانرات الحساب' },
+  '/search/room':                    { method: 'GET',  desc: '✅ بحث عن غرفة | key=...' },
+
+  // ── يعمل من NOX/Android فقط ⚡ (10003 من Replit) ──────────────────────
+  '/user/v3/get':                    { method: 'GET',  desc: '⚡ بيانات مستخدم | queryUid=...' },
+  '/home/v10/mine':                  { method: 'GET',  desc: '⚡ تاب Mine | pageNum=1 tagId=1 country=EG' },
+  '/roomctrb/guardian/rank':         { method: 'GET',  desc: '⚡ ترتيب الحراس | guardianUid=... type=1' },
+  '/user/prop/own':                  { method: 'GET',  desc: '⚡ ممتلكات مستخدم | tgUid=...' },
+  '/giftwall/getUserHistoryReceives':{ method: 'GET',  desc: '⚡ تاريخ الهدايا المستلمة | tgUid=...' },
+  '/room/getPowerRoom':              { method: 'GET',  desc: '⚡ الغرف الموصى بها' },
+  '/client/configure':               { method: 'GET',  desc: '⚡ إعدادات التطبيق' },
+  '/client/init':                    { method: 'GET',  desc: '⚡ تهيئة التطبيق | faceVersion=0 secondFaceVersion=0' },
+  '/activity/room/level/getInfo':    { method: 'GET',  desc: '⚡ مستوى غرفة | roomId=...' },
+  '/room/pk/getInfo':                { method: 'GET',  desc: '⚡ معلومات PK | roomId=...' },
+  '/live/get/last/data/record':      { method: 'GET',  desc: '⚡ آخر بيانات بث | roomUid=...' },
+  '/uservisitor/visitorRecord':      { method: 'POST', desc: '⚡ سجل الزيارات | pageNum=1 pageSize=20' },
+  '/giftCar/queryHistoryCarList':    { method: 'POST', desc: '⚡ تاريخ السيارات | tgUid=... pageNo=1 pageSize=20' },
+  '/headwear/queryHistoryHeadwearList':{ method:'POST', desc: '⚡ تاريخ الأغطية | tgUid=... pageNo=1 pageSize=20' },
+  '/sud/game/select/total/record':   { method: 'POST', desc: '⚡ إحصائيات لعبة | gameId=1001 targetUid=... type=0' },
+  '/fans/list':                      { method: 'GET',  desc: '⚡ قائمة المتابعين | pageNo=1 pageSize=20' },
+  '/room/getTRtcToken':              { method: 'POST', desc: '⚡ توكن TRTC | roomId=... type=1 channel=0' },
+  '/imsvr/v1/sendText':              { method: 'POST', desc: '⚡ إرسال رسالة | roomId=... type=1 content=...' },
+  '/imsvr/v1/v3/fetchRoomMembers':   { method: 'POST', desc: '⚡ أعضاء الغرفة | roomId=... limit=50' },
+  '/room/rocket/reEnter':            { method: 'POST', desc: '⚡ إعادة دخول صاروخ | roomUid=... roomType=3' },
+  '/room/mic/lockmic':               { method: 'POST', desc: '⚡ قفل مايك | roomId=... position=... state=...' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -276,23 +301,23 @@ async function main() {
     console.log('\n=== Ditto API Client ===');
     console.log('Key: a38e5f04f39b11ed | IV: 884e00163e02b26e\n');
     console.log('الأوامر:');
-    console.log('  login                          تسجيل دخول يدوي (أدخل access_token مباشرة)');
-    console.log('  session                        عرض الـ session الحالية مع تواريخ الصلاحية');
-    console.log('  refresh                        تجديد ticket يدوياً الآن');
-    console.log('  daemon                         وضع الخلفية — يجدد ticket كل 55 دقيقة');
-    console.log('  call <endpoint> [k=v ...]      استدعاء API (يجدد ticket تلقائياً لو لزم)');
+    console.log('  session                        عرض الـ session الحالية');
+    console.log('  login <token> <uid> [deviceId] حفظ session جديد');
+    console.log('  refresh                        تجديد ticket الآن');
+    console.log('  daemon                         تجديد ticket تلقائياً كل 55 دقيقة');
+    console.log('  call <endpoint> [k=v ...]      استدعاء API');
     console.log('  decrypt "<base64>"             فك تشفير');
     console.log('  encrypt "plain text"           تشفير\n');
-    console.log('Endpoints المتاحة:');
-    Object.entries(ENDPOINTS).forEach(([path, info]) => {
-      console.log('  ' + path.padEnd(30) + info.desc);
+    console.log('Endpoints (✅ = يعمل من Replit | ⚡ = يعمل من NOX فقط):');
+    Object.entries(ENDPOINTS).forEach(([ep, info]) => {
+      console.log('  ' + ep.padEnd(40) + info.desc);
     });
     return;
   }
 
   if (cmd === 'session') {
     const s = loadSession();
-    if (!s.uid) { console.log('❌ No session. Run: node ditto_api.js login'); return; }
+    if (!s.uid) { console.log('❌ No session. Run: node re-work/ditto_api.js login <token> <uid>'); return; }
     printSession(s);
     return;
   }
@@ -309,40 +334,26 @@ async function main() {
   }
 
   if (cmd === 'login') {
-    // تسجيل دخول يدوي — المستخدم يعطينا access_token + uid
-    console.log('\n=== تسجيل دخول يدوي ===');
-    console.log('أدخل البيانات من حسابك (من Frida أو مرة واحدة فقط):\n');
     const access_token = args[1];
     const uid          = args[2];
     const deviceId     = args[3] || crypto.randomBytes(16).toString('hex');
 
     if (!access_token || !uid) {
-      console.log('الاستخدام: node ditto_api.js login <access_token> <uid> [deviceId]');
-      console.log('\nأو أضف يدوياً لـ ditto_session.json:');
-      console.log(JSON.stringify({
-        access_token: 'TOKEN_HERE',
-        uid:          'UID_HERE',
-        deviceId:     crypto.randomBytes(16).toString('hex'),
-        access_token_saved_at: Date.now(),
-      }, null, 2));
+      console.log('الاستخدام: node re-work/ditto_api.js login <access_token> <uid> [deviceId]');
       return;
     }
 
-    const session = {
-      access_token,
-      uid,
-      deviceId,
-      access_token_saved_at: Date.now(),
-    };
+    const session = { access_token, uid, deviceId, access_token_saved_at: Date.now() };
     saveSession(session);
     console.log('✅ Session saved. جاري جلب ticket...');
 
     try {
       await refreshTicket(session);
       printSession(loadSession());
-      console.log('\n✅ جاهز! استخدم: node ditto_api.js call <endpoint>');
+      console.log('\n✅ جاهز! استخدم: node re-work/ditto_api.js call <endpoint>');
     } catch (e) {
       console.error('❌', e.message);
+      console.log('💡 يمكنك إضافة ticket يدوياً من Frida أو NOX');
     }
     return;
   }
@@ -367,23 +378,21 @@ async function main() {
   if (cmd === 'call') {
     const session = loadSession();
     if (!session.access_token) {
-      console.error('❌ No session. Run: node ditto_api.js login <access_token> <uid>');
+      console.error('❌ No session. Run: node re-work/ditto_api.js login <access_token> <uid>');
       return;
     }
 
     const endpoint = args[1];
-    if (!endpoint) { console.error('❌ Provide an endpoint, e.g.: /purse/query'); return; }
+    if (!endpoint) { console.error('❌ Provide an endpoint'); return; }
 
-    // ── Auto-refresh ticket if needed ───────────────────
     try {
       await ensureTicket(session);
     } catch (e) {
-      console.error('❌ Ticket error:', e.message);
-      return;
+      console.warn('⚠️  Ticket refresh failed:', e.message);
+      console.warn('   Using existing ticket (may be expired)');
     }
 
     const freshSession = loadSession();
-
     const params = {
       ticket:     freshSession.ticket,
       uid:        freshSession.uid,
@@ -398,6 +407,10 @@ async function main() {
 
     const info = ENDPOINTS[endpoint];
     const method = info ? info.method : 'GET';
+
+    if (info && info.desc.startsWith('⚡')) {
+      console.log('⚠️  هذا الـ endpoint يعمل من NOX/Android فقط — قد يرجع 10003 من Replit');
+    }
 
     const result = await apiCall(method, endpoint, params);
     if (result) {
