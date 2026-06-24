@@ -1,0 +1,176 @@
+[1] Connecting to NOX...
+already connected to 127.0.0.1:62001
+[2] Starting frida-server on NOX...
+[3] Running hook - Ditto will open in NOX...
+*** Login to Ditto and watch for KEY and IV below ***
+
+     ____
+    / _  |   Frida 16.5.9 - A world-class dynamic instrumentation toolkit
+   | (_| |
+    > _  |   Commands:
+   /_/ |_|       help      -> Displays the help system
+   . . . .       object?   -> Display information about 'object'
+   . . . .       exit/quit -> Exit
+   . . . .
+   . . . .   More info at https://frida.re/docs/home/
+   . . . .
+   . . . .   Connected to SM-G988N (id=127.0.0.1:62001)
+Attaching...
+
+[*] Frida attached to com.ditto.mobile
+[*] Hooking JNI key getter functions...
+
+[+] Found class: com.juxiao.jni.JniUtils
+  [hook] getAk
+  [hook] getAkIv
+  [hook] getDk
+  [hook] getNetEaseKey
+  [hook] getAgoraKey
+[+] Found class: com.ditto.ditto_framework.aes.JniAesKit
+[+] Found class: com.ditto.ditto_framework.des.DESKit
+[+] Found class: com.ditto.ditto_framework.sign.SignKit
+
+[*] Hooking javax.crypto.Cipher...
+[+] Cipher hooks installed
+[+] SecretKeySpec hook installed
+
+[*] Hooking OkHttp for ed field monitoring...
+[-] OkHttp hook failed: Error: java.lang.ClassNotFoundException: Didn't find class "okhttp3.OkHttpClient" on path: DexPathList[[zip file "/system/framework/android.test.runner.jar", zip file "/data/app/com.ditto.mobile-1/base.apk", zip file "/data/app/com.ditto.mobile-1/split_config.armeabi_v7a.apk", zip file "/data/app/com.ditto.mobile-1/split_config.mdpi.apk"],nativeLibraryDirectories=[/data/app/com.ditto.mobile-1/lib/arm, /data/app/com.ditto.mobile-1/base.apk!/lib/armeabi-v7a, /data/app/com.ditto.mobile-1/split_config.armeabi_v7a.apk!/lib/armeabi-v7a, /data/app/com.ditto.mobile-1/split_config.mdpi.apk!/lib/armeabi-v7a, /system/lib, /vendor/lib]]
+
+[*] All hooks ready! Launch/use the app now.
+
+============================================================
+[SM-G988N::com.ditto.mobile ]-> [-] libndklib-common.so not loaded yet. Try using the app first.
+
+[KEY] com.juxiao.jni.JniUtils.getAk()
+  args: com.ditto.mobile.DittoApplication@9e80aad  |hex: 636f6d2e646974746f2e6d6f62696c652e446974746f4170706c69636174696f6e4039653830616164
+  => a38e5f04f39b11ed  |hex: 61333865356630346633396231316564
+
+[KEY] com.juxiao.jni.JniUtils.getAkIv()
+  args: com.ditto.mobile.DittoApplication@9e80aad  |hex: 636f6d2e646974746f2e6d6f62696c652e446974746f4170706c69636174696f6e4039653830616164
+  => 884e00163e02b26e  |hex: 38383465303031363365303262323665
+
+[KEY_SPEC] SecretKeySpec(AES)
+
+[KEY] com.juxiao.jni.JniUtils.getAk()
+  args: com.ditto.mobile.DittoApplication@9e80aad  |hex: 636f6d2e646974746f2e6d6f62696c652e446974746f4170706c69636174696f6e4039653830616164
+  => a38e5f04f39b11ed  |hex: 61333865356630346633396231316564
+
+[KEY] com.juxiao.jni.JniUtils.getAkIv()
+  args: com.ditto.mobile.DittoApplication@9e80aad  |hex: 636f6d2e646974746f2e6d6f62696c652e446974746f4170706c69636174696f6e4039653830616164
+  => 884e00163e02b26e  |hex: 38383465303031363365303262323665
+
+[KEY_SPEC] SecretKeySpec(AES)
+  key (16 bytes): 61333865356630346633396231316564
+  key (16 bytes): 61333865356630346633396231316564
+
+[CIPHER] Cipher.init(mode=1, with IV spec)
+  key (16 bytes): 61333865356630346633396231316564
+  IV  (16 bytes): 38383465303031363365303262323665
+  algorithm: AES/CBC/PKCS5Padding
+
+[CIPHER] doFinal (DECRYPT)
+  input  (56 bytes): 64657669636549643d3235336537356662326236666333303264616463346233656539366263303937642673696d436f756e7472793d4547...
+
+[CIPHER] Cipher.init(mode=1, with IV spec)
+  key (16 bytes): 61333865356630346633396231316564
+  IV  (16 bytes): 38383465303031363365303262323665
+  algorithm: AES/CBC/PKCS5Padding
+
+[CIPHER] doFinal (DECRYPT)
+  output (64 bytes): 77266504340d4b63517d2e804b-b2c044d251b7d1961472959713031050a7211705e242201116b757b121d077c6d4c48-45d-748-d1a6a1c464d27-f6d39034f...
+  input  (70 bytes): 7469636b65743d267569643d302664657669636549643d3235336537356662326236666333303264616463346233656539366263303937642673696d436f756e...
+  output (80 bytes): 556f3546121f7374455d3168-81a-c39660270382d355a0b7b2380376a5d5678746b2d28681866462b3e5f6f3323715c33172b0e4700513d3e6556-27812254a...
+�cQ}Ҁ���♦��↓��ק�0�♣e♦4
+�◄p���☺◄�u�����LH����j�F���9♥O
+  output (utf8): Uo˺�▼���]1��→�9�☻����Z♂�#�7j��x�k-�h↑f�+�_o3�q�3↨�♫G
+
+[KEY] com.juxiao.jni.JniUtils.getAk()
+  args: com.ditto.mobile.DittoApplication@9e80aad  |hex: 636f6d2e646974746f2e6d6f62696c652e446974746f4170706c69636174696f6e4039653830616164
+  => a38e5f04f39b11ed  |hex: 61333865356630346633396231316564
+
+[KEY] com.juxiao.jni.JniUtils.getAkIv()
+  args: com.ditto.mobile.DittoApplication@9e80aad  |hex: 636f6d2e646974746f2e6d6f62696c652e446974746f4170706c69636174696f6e4039653830616164
+  => 884e00163e02b26e  |hex: 38383465303031363365303262323665
+
+[KEY_SPEC] SecretKeySpec(AES)
+  key (16 bytes): 61333865356630346633396231316564
+
+[CIPHER] Cipher.init(mode=2, with IV spec)
+  key (16 bytes): 61333865356630346633396231316564
+  IV  (16 bytes): 38383465303031363365303262323665
+  algorithm: AES/CBC/PKCS5Padding
+
+[CIPHER] doFinal (DECRYPT)
+  input  (3440 bytes): 704b-15c7d19533f1b667d673048106a442b694f2f25527121432172441a757d5a3927677658-d58246f655e682b5531-82a667d63004b2f386e5c4c43785c11...
+  output (3429 bytes): 7b22636f6465223a3230302c2264617461223a7b22697345786368616e6765417761726473223a2230222c2274696d657374616d7073223a2231222c226c6f74...
+  output (utf8): {"code":200,"data":{"isExchangeAwards":"0","timestamps":"1","lottery_box_option":"0","luckyBagMedalPic":"https://res.sayyouditto.com/title/1717576239470?imageslim","cpGiftId":"0","customRoomBgGoldNumb
+
+[KEY] com.juxiao.jni.JniUtils.getAk()
+  args: com.ditto.mobile.DittoApplication@9e80aad  |hex: 636f6d2e646974746f2e6d6f62696c652e446974746f4170706c69636174696f6e4039653830616164
+  => a38e5f04f39b11ed  |hex: 61333865356630346633396231316564
+
+[KEY] com.juxiao.jni.JniUtils.getAkIv()
+  args: com.ditto.mobile.DittoApplication@9e80aad  |hex: 636f6d2e646974746f2e6d6f62696c652e446974746f4170706c69636174696f6e4039653830616164
+  => 884e00163e02b26e  |hex: 38383465303031363365303262323665
+
+[KEY_SPEC] SecretKeySpec(AES)
+  key (16 bytes): 61333865356630346633396231316564
+
+[CIPHER] Cipher.init(mode=1, with IV spec)
+  key (16 bytes): 61333865356630346633396231316564
+  IV  (16 bytes): 38383465303031363365303262323665
+  algorithm: AES/CBC/PKCS5Padding
+
+[CIPHER] doFinal (DECRYPT)
+  input  (70 bytes): 7469636b65743d267569643d302664657669636549643d3235336537356662326236666333303264616463346233656539366263303937642673696d436f756e...
+  output (80 bytes): 556f3546121f7374455d3168-81a-c39660270382d355a0b7b2380376a5d5678746b2d28681866462b3e5f6f3323715c33172b0e4700513d3e6556-27812254a...
+  output (utf8): Uo˺�▼���]1��→�9�☻����Z♂�#�7j��x�k-�h↑f�+�_o3�q�3↨�♫G
+
+[KEY] com.juxiao.jni.JniUtils.getAk()
+  args: com.ditto.mobile.DittoApplication@9e80aad  |hex: 636f6d2e646974746f2e6d6f62696c652e446974746f4170706c69636174696f6e4039653830616164
+  => a38e5f04f39b11ed  |hex: 61333865356630346633396231316564
+
+[KEY] com.juxiao.jni.JniUtils.getAkIv()
+  args: com.ditto.mobile.DittoApplication@9e80aad  |hex: 636f6d2e646974746f2e6d6f62696c652e446974746f4170706c69636174696f6e4039653830616164
+  => 884e00163e02b26e  |hex: 38383465303031363365303262323665
+
+[KEY_SPEC] SecretKeySpec(AES)
+  key (16 bytes): 61333865356630346633396231316564
+
+[CIPHER] Cipher.init(mode=2, with IV spec)
+  key (16 bytes): 61333865356630346633396231316564
+  IV  (16 bytes): 38383465303031363365303262323665
+  algorithm: AES/CBC/PKCS5Padding
+
+[CIPHER] doFinal (DECRYPT)
+  input  (28944 bytes): 704b-15c7d19533f1b667d673048106a3b4a7a422a6934484c-82c4e76642d7a-23a61271a5d7a5e2e692e6b5c491e-8533c3b5009-e-b243e2c35-6790c6f55...
+  output (28928 bytes): 7b22636f6465223a3230302c2264617461223a7b22666163654a736f6e223a7b226964223a322c2276657273696f6e223a2231222c22737461747573223a312c...
+  output (utf8): {"code":200,"data":{"faceJson":{"id":2,"version":"1","status":1,"json":"YPmRXdGyvDY8J+kL87TianDf7PTUcxqwK12v68yjoFhYcVLPMJ1szRRkP5Gm2REO/1ge3t1LOth0\r\nfehGAwf8ipe22ktyc/tbz/0UCruVdI45l+GYY4acdoYHqRNq
+
+[KEY] com.juxiao.jni.JniUtils.getAk()
+  args: com.ditto.mobile.DittoApplication@9e80aad  |hex: 636f6d2e646974746f2e6d6f62696c652e446974746f4170706c69636174696f6e4039653830616164
+  => a38e5f04f39b11ed  |hex: 61333865356630346633396231316564
+
+[KEY] com.juxiao.jni.JniUtils.getAkIv()
+  args: com.ditto.mobile.DittoApplication@9e80aad  |hex: 636f6d2e646974746f2e6d6f62696c652e446974746f4170706c69636174696f6e4039653830616164
+  => 884e00163e02b26e  |hex: 38383465303031363365303262323665
+
+[KEY_SPEC] SecretKeySpec(AES)
+  key (16 bytes): 61333865356630346633396231316564
+
+[CIPHER] Cipher.init(mode=2, with IV spec)
+  key (16 bytes): 61333865356630346633396231316564
+  IV  (16 bytes): 38383465303031363365303262323665
+  algorithm: AES/CBC/PKCS5Padding
+
+[CIPHER] doFinal (DECRYPT)
+  input  (288 bytes): 704b-15c7d19533f1b667d673048106a5774616b4b281d705667013d16017d20101e75447f-3604d457d325c1f47757c4774-65660617a611151334005477e6a...
+  output (274 bytes): 7b22636f6465223a3230302c2264617461223a7b22726f6f6d5265645061636b476f6c6473223a5b2231303030222c2232303030222c2236303030222c223135...
+  output (utf8): {"code":200,"data":{"roomRedPackGolds":["1000","2000","6000","15000"],"redPackNum":["5","10","20","30"],"allRoomRedPackGolds":["5000","9000","20000","80000"],"keywordRedPackGolds":["1000","2000","6000
+
+
+
+
+
+
