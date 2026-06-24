@@ -1,1 +1,1 @@
-- [Ditto RE Project](ditto-re-project.md) — reverse engineering Ditto Live APK to decrypt `ed` field; all key findings, current blockers, next steps
+- [Ditto RE Project](ditto-re-project.md) — COMPLETE: AES keys confirmed, working API client built, session captured, version-locked endpoints documented
