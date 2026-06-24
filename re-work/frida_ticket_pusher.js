@@ -16,9 +16,9 @@
 'use strict';
 
 // ─── CONFIG (عدّل هنا فقط) ───────────────────────────────────────────────────
-var REPLIT_HOST    = 'YOUR_REPLIT_DEV_DOMAIN_HERE';   // مثال: abc123.replit.dev
+var REPLIT_HOST    = 'e5976c2d-0bf9-4181-b9bf-f08d16db065b-00-3umk66t73idr8.kirk.replit.dev';
 var WEBHOOK_PATH   = '/api/session/update';
-var WEBHOOK_SECRET = 'YOUR_WEBHOOK_SECRET_HERE';      // من WEBHOOK_SECRET في Secrets
+var WEBHOOK_SECRET = '9c95c0ea01ffdd3362d3b282ffb40cc54dea258b230f066a';
 // ──────────────────────────────────────────────────────────────────────────────
 
 if (REPLIT_HOST === 'YOUR_REPLIT_DEV_DOMAIN_HERE') {
