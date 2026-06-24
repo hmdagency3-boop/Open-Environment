@@ -21,3 +21,8 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+WEBHOOK_SECRET = "9c95c0ea01ffdd3362d3b282ffb40cc54dea258b230f066a"
