@@ -6,17 +6,18 @@
  * الاستخدام:
  *   node re-work/ditto_api.js session                       عرض الـ session الحالية
  *   node re-work/ditto_api.js login <access_token> <uid>    حفظ session
+ *   node re-work/ditto_api.js setup-push <url> <secret>     ربط Replit للـ auto-push
  *   node re-work/ditto_api.js refresh                       تجديد ticket يدوياً
- *   node re-work/ditto_api.js daemon                        تجديد ticket كل 55 دقيقة
+ *   node re-work/ditto_api.js refresh-push                  تجديد + بعت لـ Replit مرة واحدة
+ *   node re-work/ditto_api.js daemon                        تجديد ticket كل 55 دقيقة (محلي فقط)
+ *   node re-work/ditto_api.js daemon-push                   تجديد + بعت لـ Replit كل 55 دقيقة ✅
  *   node re-work/ditto_api.js call <endpoint> [k=v ...]     استدعاء API
  *   node re-work/ditto_api.js decrypt "<base64>"            فك تشفير
  *   node re-work/ditto_api.js encrypt "plain text"          تشفير
- *   node re-work/ditto_api.js flows                         استعراض بيانات من الـ flows المحفوظة
  *
  * ⚠️  ملاحظة الـ version-lock:
  *   بعض الـ endpoints ترجع 10003 "Please update app version" عند الاستدعاء من Replit
  *   بسبب CDN geo-routing — نفس الـ endpoints تعمل من NOX/Android محلياً.
- *   الـ endpoints المؤكدة من flows_(2) و flows_(3) مسجّلة في FLOWS_ONLY.
  */
 
 const crypto = require('crypto');
@@ -198,10 +199,62 @@ async function ensureTicket(session) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Push ticket to Replit webhook
+// ─────────────────────────────────────────────────────────────────────────────
+async function pushToReplit(ticket, session) {
+  const cfg = session._replit;
+  if (!cfg || !cfg.url || !cfg.secret) {
+    throw new Error('Replit غير مُعدّ — شغّل أولاً: node re-work/ditto_api.js setup-push <url> <secret>');
+  }
+
+  const body = new URLSearchParams({
+    ticket,
+    secret:   cfg.secret,
+    uid:      session.uid      || '',
+    deviceId: session.deviceId || '',
+  }).toString();
+
+  return new Promise((resolve, reject) => {
+    const urlObj  = new URL(cfg.url);
+    const isHttps = urlObj.protocol === 'https:';
+    const mod     = isHttps ? require('https') : require('http');
+
+    const req = mod.request({
+      hostname: urlObj.hostname,
+      port:     urlObj.port || (isHttps ? 443 : 80),
+      path:     urlObj.pathname,
+      method:   'POST',
+      headers: {
+        'content-type':      'application/x-www-form-urlencoded',
+        'content-length':    Buffer.byteLength(body).toString(),
+        'x-webhook-secret':  cfg.secret,
+      },
+    }, res => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        if (res.statusCode === 200) {
+          console.log('☁️  Replit updated:', text.slice(0, 120));
+          resolve(true);
+        } else {
+          console.error('❌ Replit push failed HTTP', res.statusCode, text.slice(0, 120));
+          resolve(false);
+        }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Daemon mode
 // ─────────────────────────────────────────────────────────────────────────────
-async function daemonMode() {
-  console.log('🤖 Daemon mode — يجدد ticket تلقائياً كل 55 دقيقة');
+async function daemonMode(withPush = false) {
+  const label = withPush ? 'Daemon-Push' : 'Daemon';
+  console.log(`🤖 ${label} — يجدد ticket كل 55 دقيقة${withPush ? ' ويبعته لـ Replit تلقائياً' : ''}`);
   console.log('   اضغط Ctrl+C للإيقاف\n');
 
   async function tick() {
@@ -211,7 +264,11 @@ async function daemonMode() {
       process.exit(1);
     }
     try {
-      await refreshTicket(session);
+      const ticket = await refreshTicket(session);
+      if (withPush) {
+        try { await pushToReplit(ticket, loadSession()); }
+        catch (pe) { console.error('⚠️  Push error:', pe.message); }
+      }
       console.log('⏰ Next refresh in 55 minutes...\n');
     } catch (e) {
       console.error('❌ Refresh error:', e.message);
@@ -305,8 +362,11 @@ async function main() {
     console.log('الأوامر:');
     console.log('  session                        عرض الـ session الحالية');
     console.log('  login <token> <uid> [deviceId] حفظ session جديد');
-    console.log('  refresh                        تجديد ticket الآن');
-    console.log('  daemon                         تجديد ticket تلقائياً كل 55 دقيقة');
+    console.log('  setup-push <url> <secret>      ربط Replit — يُحفظ في session مرة واحدة');
+    console.log('  refresh                        تجديد ticket الآن (محلي فقط)');
+    console.log('  refresh-push                   تجديد ticket + بعته لـ Replit فوراً');
+    console.log('  daemon                         تجديد ticket كل 55 دقيقة (محلي)');
+    console.log('  daemon-push                    تجديد + بعت لـ Replit كل 55 دقيقة ✅ الأفضل');
     console.log('  call <endpoint> [k=v ...]      استدعاء API');
     console.log('  decrypt "<base64>"             فك تشفير');
     console.log('  encrypt "plain text"           تشفير\n');
@@ -360,6 +420,22 @@ async function main() {
     return;
   }
 
+  if (cmd === 'setup-push') {
+    const url    = args[1];
+    const secret = args[2];
+    if (!url || !secret) {
+      console.log('الاستخدام: node re-work/ditto_api.js setup-push <replit_url> <webhook_secret>');
+      console.log('مثال:');
+      console.log('  node re-work/ditto_api.js setup-push https://abc.replit.dev/api/session/update MY_SECRET');
+      return;
+    }
+    const session = loadSession();
+    session._replit = { url, secret };
+    saveSession(session);
+    console.log('✅ Replit push مُعدّ — جرّب: node re-work/ditto_api.js refresh-push');
+    return;
+  }
+
   if (cmd === 'refresh') {
     const session = loadSession();
     if (!session.access_token) { console.error('❌ No session'); return; }
@@ -372,8 +448,26 @@ async function main() {
     return;
   }
 
+  if (cmd === 'refresh-push') {
+    const session = loadSession();
+    if (!session.access_token) { console.error('❌ No session'); return; }
+    try {
+      const ticket = await refreshTicket(session);
+      await pushToReplit(ticket, loadSession());
+      printSession(loadSession());
+    } catch (e) {
+      console.error('❌', e.message);
+    }
+    return;
+  }
+
   if (cmd === 'daemon') {
-    await daemonMode();
+    await daemonMode(false);
+    return;
+  }
+
+  if (cmd === 'daemon-push') {
+    await daemonMode(true);
     return;
   }
 
