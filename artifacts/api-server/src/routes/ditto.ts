@@ -441,21 +441,56 @@ router.post("/trtc-token", async (req, res) => {
 });
 
 // ── GET /api/ditto/rooms/search ───────────────────────────────────────────────
-// Search rooms by keyword (room name, ID, or owner nickname).
+// Search rooms by keyword — fetches from all tabs in parallel and filters locally.
+// Ditto's native /search/room requires a newer app version (code 10003), so we
+// work around it by scanning all available tabs and matching client-side.
 router.get("/rooms/search", async (req, res) => {
-  const q = (req.query.q as string ?? "").trim();
+  const q = (req.query.q as string ?? "").trim().toLowerCase();
   if (!q) {
     res.status(400).json({ ok: false, rooms: [], error: "q required" }); return;
   }
+
+  const TABS = ["POPULAR", "ALL", "EG", "SA", "AE", "IQ", "MA", "LY", "TN", "SD", "JO", "KW", "SY", "OM"];
+  const isNumeric = /^\d+$/.test(q);
+
   try {
-    const result = await dittoCall("/search/room", { keyword: q, pageNum: "1", pageSize: "30" }) as Record<string, unknown>;
-    if (result?.code === 200) {
-      const data  = result.data as Record<string, unknown>;
-      const list  = (data?.list ?? data?.listRoom ?? data?.rooms ?? []) as Record<string, unknown>[];
-      res.json({ ok: true, rooms: list.map(parseRoom), total: list.length });
-    } else {
-      res.json({ ok: false, rooms: [], error: result });
+    // Fetch all tabs in parallel (pageSize=50 each)
+    const results = await Promise.allSettled(
+      TABS.map(tab =>
+        dittoCall("/home/tab/room", { tab, pageNum: "1", pageSize: "50" }) as Promise<Record<string, unknown>>
+      )
+    );
+
+    // Collect and deduplicate rooms
+    const seen = new Set<string>();
+    const allRooms: ReturnType<typeof parseRoom>[] = [];
+
+    for (const r of results) {
+      if (r.status !== "fulfilled") continue;
+      const result = r.value;
+      if (result?.code !== 200) continue;
+      const data = result.data as Record<string, unknown>;
+      const list = ((data?.listRoom ?? data?.list ?? []) as Record<string, unknown>[]);
+      for (const raw of list) {
+        const room = parseRoom(raw);
+        const key = String(room.roomId ?? "");
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        allRooms.push(room);
+      }
     }
+
+    // Filter by query
+    const matches = allRooms.filter(room => {
+      if (isNumeric) {
+        return String(room.roomId) === q || String(room.erbanNo) === q || String(room.uid) === q;
+      }
+      const haystack = [room.roomName, room.nick, room.roomDesc, String(room.erbanNo ?? ""), String(room.roomId ?? "")]
+        .filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(q);
+    });
+
+    res.json({ ok: true, rooms: matches, total: matches.length, scanned: allRooms.length });
   } catch (e) {
     res.status(500).json({ ok: false, rooms: [], error: String(e) });
   }
