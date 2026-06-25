@@ -256,6 +256,40 @@ router.get("/nim-credentials", (_req, res) => {
   }
 });
 
+// ── GET /api/ditto/room-members/:roomId ──────────────────────────────────────
+router.get("/room-members/:roomId", async (req, res) => {
+  const { roomId } = req.params;
+  if (!roomId) { res.status(400).json({ ok: false, error: "roomId required" }); return; }
+  try {
+    const result = await dittoCall("/imsvr/v1/v3/fetchRoomMembers", {
+      roomId, limit: "50", userScore: "", vipScore: "",
+    }, "POST") as Record<string, unknown>;
+    if (result?.code !== 200) {
+      res.json({ ok: false, members: [], error: result?.message ?? "API error" }); return;
+    }
+    const data = result.data as Record<string, unknown>;
+    const raw = (data?.vipMemberList as Record<string, unknown>[]) ?? [];
+    const members = raw.map(m => ({
+      uid:         m.uid,
+      nick:        m.nick ?? "",
+      avatar:      m.avatar ?? null,
+      gender:      m.gender ?? null,
+      isManager:   m.is_manager ?? false,
+      isCreator:   m.is_creator ?? false,
+      onMic:       m.onMic ?? false,
+      inRoom:      m.inRoomStatus ?? false,
+      growthLevel: m.growthLevel ?? 0,
+      charmLevel:  m.charmLevel ?? 0,
+      carName:     m.car_name ?? null,
+      noLv:        m.noLv ?? 0,
+      erbanNo:     m.erban_no ?? null,
+    }));
+    res.json({ ok: true, members, total: members.length });
+  } catch (e) {
+    res.status(500).json({ ok: false, members: [], error: String(e) });
+  }
+});
+
 // ── GET /api/ditto/balance ────────────────────────────────────────────────────
 router.get("/balance", async (_req, res) => {
   try {

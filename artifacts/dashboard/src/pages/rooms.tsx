@@ -34,6 +34,22 @@ interface ChatMessage {
   ts:   number;
 }
 
+interface RoomMember {
+  uid:         number;
+  nick:        string;
+  avatar:      string | null;
+  gender:      number | null;
+  isManager:   boolean;
+  isCreator:   boolean;
+  onMic:       boolean;
+  inRoom:      boolean;
+  growthLevel: number;
+  charmLevel:  number;
+  carName:     string | null;
+  noLv:        number;
+  erbanNo:     number | null;
+}
+
 export default function Rooms() {
   const [activeTab, setActiveTab] = useState(TABS[0]);
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
@@ -46,6 +62,11 @@ export default function Rooms() {
   const [chatStatus,   setChatStatus]   = useState<"idle" | "connecting" | "connected" | "failed" | "no_credentials">("idle");
   const nimChatroomRef = useRef<unknown>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // ── Members state ─────────────────────────────────────────────────────────
+  const [membersOpen,    setMembersOpen]    = useState(false);
+  const [members,        setMembers]        = useState<RoomMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
 
   // ── Search state ────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
@@ -181,6 +202,28 @@ export default function Rooms() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages.length]);
+
+  // ── Members polling ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!membersOpen || !activeSession) {
+      setMembers([]);
+      return;
+    }
+    let cancelled = false;
+    async function fetchMembers() {
+      if (cancelled) return;
+      setMembersLoading(true);
+      try {
+        const res = await fetch(`/api/ditto/room-members/${activeSession!.roomId}`);
+        const data = await res.json() as { ok: boolean; members: RoomMember[] };
+        if (!cancelled && data.ok) setMembers(data.members);
+      } catch {}
+      if (!cancelled) setMembersLoading(false);
+    }
+    fetchMembers();
+    const timer = setInterval(fetchMembers, 30000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [membersOpen, activeSession?.roomId]);
 
   const stopSession = useCallback(async () => {
     if (!activeSession) return;
@@ -360,6 +403,23 @@ export default function Rooms() {
               {isMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
               {isMuted ? "MUTED" : "LIVE"}
             </button>
+            {/* Members toggle */}
+            <button
+              onClick={() => setMembersOpen(o => !o)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold tracking-widest border transition-colors relative ${
+                membersOpen
+                  ? "border-primary/60 text-primary bg-primary/10"
+                  : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40"
+              }`}
+            >
+              <Users className="w-3 h-3" />
+              MEMBERS
+              {members.length > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-muted text-muted-foreground text-[8px] font-black rounded-full w-4 h-4 flex items-center justify-center">
+                  {members.length > 99 ? "99" : members.length}
+                </span>
+              )}
+            </button>
             {/* Chat toggle */}
             <button
               onClick={() => setChatOpen(o => !o)}
@@ -388,6 +448,72 @@ export default function Rooms() {
       )}
 
       <div className="flex-1 flex overflow-hidden min-h-0">
+
+        {/* ── Members panel ────────────────────────────────────────────────── */}
+        {membersOpen && activeSession && (
+          <div className="w-64 shrink-0 border-r border-border flex flex-col bg-background/50 font-mono">
+            <div className="border-b border-border px-3 py-2 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <Users className="w-3 h-3 text-primary" />
+                <span className="text-[10px] font-bold tracking-widest uppercase text-primary">MEMBERS</span>
+                {membersLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+              </div>
+              <span className="text-[9px] text-muted-foreground">{members.length} online</span>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {members.length === 0 && !membersLoading && (
+                <div className="flex items-center justify-center h-20 text-muted-foreground">
+                  <div className="text-center">
+                    <Users className="w-4 h-4 mx-auto mb-1 opacity-30" />
+                    <p className="text-[9px] uppercase tracking-widest opacity-60">No members</p>
+                  </div>
+                </div>
+              )}
+              {members.map(m => (
+                <div key={m.uid} className="px-2 py-1.5 flex items-center gap-2 border-b border-border/20 hover:bg-muted/20 transition-colors">
+                  {/* Avatar with mic indicator */}
+                  <div className="relative shrink-0">
+                    {m.avatar ? (
+                      <img
+                        src={m.avatar}
+                        alt=""
+                        className="w-8 h-8 rounded-full object-cover bg-muted"
+                        onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                        <User className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    )}
+                    {m.onMic && (
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-background" title="On mic" />
+                    )}
+                  </div>
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {m.isCreator && (
+                        <span className="text-[8px] bg-primary/20 text-primary px-1 py-px leading-none shrink-0">HOST</span>
+                      )}
+                      {m.isManager && !m.isCreator && (
+                        <span className="text-[8px] bg-yellow-500/20 text-yellow-400 px-1 py-px leading-none shrink-0">MOD</span>
+                      )}
+                      <span className="text-[10px] text-foreground truncate">{m.nick || `UID:${m.uid}`}</span>
+                    </div>
+                    <div className="text-[8px] text-muted-foreground/50 flex items-center gap-1.5 mt-px">
+                      <span>Lv.{m.growthLevel}</span>
+                      {m.erbanNo && <span>#{m.erbanNo}</span>}
+                      {m.carName && <span className="truncate max-w-[80px]" title={m.carName}>🚗 {m.carName}</span>}
+                    </div>
+                  </div>
+                  {/* UID copy hint */}
+                  <span className="text-[8px] text-muted-foreground/30 shrink-0">{m.uid}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Chat panel ─────────────────────────────────────────────────────── */}
         {chatOpen && activeSession && (
           <div className="w-72 shrink-0 border-r border-border flex flex-col bg-background/50 font-mono">
