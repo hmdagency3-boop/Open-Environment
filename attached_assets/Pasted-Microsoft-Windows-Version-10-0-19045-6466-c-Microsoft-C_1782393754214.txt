@@ -1,0 +1,57 @@
+Microsoft Windows [Version 10.0.19045.6466]
+(c) Microsoft Corporation. All rights reserved.
+
+C:\Users\jony>cd "C:\Users\jony\Downloads\New folder (3)"
+
+C:\Users\jony\Downloads\New folder (3)>curl -o local_proxy.js "https://raw.githubusercontent.com/..."
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100    20  100    20    0     0     14      0  0:00:01  0:00:01 --:--:--    14
+
+C:\Users\jony\Downloads\New folder (3)>node local_proxy.js
+C:\Users\jony\Downloads\New folder (3)\local_proxy.js:1
+400: Invalid request
+   ^
+
+SyntaxError: Unexpected token ':'
+    at wrapSafe (node:internal/modules/cjs/loader:1804:18)
+    at Module._compile (node:internal/modules/cjs/loader:1845:20)
+    at Object..js (node:internal/modules/cjs/loader:2002:10)
+    at Module.load (node:internal/modules/cjs/loader:1594:32)
+    at Module._load (node:internal/modules/cjs/loader:1396:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.18.0
+
+C:\Users\jony\Downloads\New folder (3)>curl -o local_proxy.js "https://e5976c2d-0bf9-4181-b9bf-f08d16db065b-00-3umk66t73idr8.kirk.replit.dev/api/download/local_proxy.js"
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  4723  100  4723    0     0   3265      0  0:00:01  0:00:01 --:--:--  3275
+
+C:\Users\jony\Downloads\New folder (3)>node local_proxy.js
+
+╔══════════════════════════════════════════════════════╗
+║           Ditto Local Proxy — شغّال ✅               ║
+╚══════════════════════════════════════════════════════╝
+
+  Port  : 7474
+  Secret: 4e432a779321fd1602a6d5418935bbf2a75524f4
+
+📋 خطوات الإعداد:
+
+  1️⃣  اعرف الـ IP العام بتاعك — افتح المتصفح وروح على:
+       https://api.ipify.org
+
+  2️⃣  افتح port 7474 في الـ Windows Firewall:
+       (ابحث عن "Windows Defender Firewall" → Inbound Rules → New Rule → Port → 7474 )
+
+  3️⃣  على Replit نفّذ:
+       node ditto_api.js setup-proxy <IP_بتاعك> 7474 4e432a779321fd1602a6d5418935bbf2a75524f4
+
+  4️⃣  جرّب:
+       node ditto_api.js call /user/v3/get queryUid=281306
+
+⚠️  خلّي النافذة دي مفتوحة — لو أقفلتها الـ proxy وقف
+
