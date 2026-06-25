@@ -17,7 +17,7 @@ export interface UserProfile {
   /** @nullable */
   signature?: string | null;
   /** @nullable */
-  erbanNo?: string | null;
+  erbanNo?: string | number | null;
   /** @nullable */
   fansNum?: number | null;
   /** @nullable */
@@ -28,6 +28,20 @@ export interface UserProfile {
   diamond?: number | null;
   /** @nullable */
   online?: boolean | null;
+  /** @nullable */
+  gender?: number | null;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  countryName?: string | null;
+  /** @nullable */
+  countryIcon?: string | null;
+  /** @nullable */
+  vipLevel?: number | null;
+  /** @nullable */
+  vipName?: string | null;
+  /** @nullable */
+  source?: string | null;
   workerUsed: boolean;
   workerNeeded: boolean;
   /** @nullable */

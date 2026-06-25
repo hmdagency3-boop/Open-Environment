@@ -17,7 +17,7 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
- * @summary Get current session status
+ * @summary Session status
  */
 export const GetSessionResponse = zod.object({
   "uid": zod.string().nullish(),
@@ -29,7 +29,7 @@ export const GetSessionResponse = zod.object({
 
 
 /**
- * @summary Get own account balance
+ * @summary Account balance
  */
 export const GetBalanceResponse = zod.object({
   "goldNum": zod.number().optional(),
@@ -41,7 +41,7 @@ export const GetBalanceResponse = zod.object({
 
 
 /**
- * @summary Lookup user by UID (gifts history)
+ * @summary Gift history by UID
  */
 export const GetUserByUidParams = zod.object({
   "uid": zod.coerce.string()
@@ -64,7 +64,7 @@ export const GetUserByUidResponse = zod.object({
 
 
 /**
- * @summary Get full user profile via worker (name, avatar, followers)
+ * @summary Full user profile
  */
 export const GetUserProfileParams = zod.object({
   "uid": zod.coerce.string()
@@ -76,12 +76,19 @@ export const GetUserProfileResponse = zod.object({
   "nickname": zod.string().nullish(),
   "avatar": zod.string().nullish(),
   "signature": zod.string().nullish(),
-  "erbanNo": zod.string().nullish(),
+  "erbanNo": zod.union([zod.string(),zod.number()]).nullish(),
   "fansNum": zod.number().nullish(),
   "followNum": zod.number().nullish(),
   "level": zod.number().nullish(),
   "diamond": zod.number().nullish(),
   "online": zod.boolean().nullish(),
+  "gender": zod.number().nullish(),
+  "countryCode": zod.string().nullish(),
+  "countryName": zod.string().nullish(),
+  "countryIcon": zod.string().nullish(),
+  "vipLevel": zod.number().nullish(),
+  "vipName": zod.string().nullish(),
+  "source": zod.string().nullish(),
   "workerUsed": zod.boolean(),
   "workerNeeded": zod.boolean(),
   "raw": zod.record(zod.string(), zod.unknown()).nullish()
@@ -89,7 +96,7 @@ export const GetUserProfileResponse = zod.object({
 
 
 /**
- * @summary Search users by name or erbanNo via worker
+ * @summary Search users by name or erbanNo
  */
 export const SearchUsersQueryParams = zod.object({
   "q": zod.coerce.string()
@@ -112,7 +119,7 @@ export const SearchUsersResponse = zod.object({
 
 
 /**
- * @summary Get live rooms list
+ * @summary Live rooms list
  */
 export const getRoomsQueryTabDefault = `POPULAR`;
 export const getRoomsQueryPageNumDefault = 1;
@@ -126,11 +133,21 @@ export const GetRoomsQueryParams = zod.object({
 
 export const GetRoomsResponse = zod.object({
   "rooms": zod.array(zod.object({
-  "roomId": zod.string().nullish(),
+  "roomId": zod.union([zod.number(),zod.string()]).nullish(),
   "roomName": zod.string().nullish(),
   "cover": zod.string().nullish(),
   "onlineNum": zod.number().nullish(),
-  "uid": zod.string().nullish()
+  "uid": zod.union([zod.number(),zod.string()]).nullish(),
+  "nick": zod.string().nullish(),
+  "erbanNo": zod.union([zod.number(),zod.string()]).nullish(),
+  "countryCode": zod.string().nullish(),
+  "countryName": zod.string().nullish(),
+  "countryIcon": zod.string().nullish(),
+  "vipLevel": zod.number().nullish(),
+  "vipName": zod.string().nullish(),
+  "gender": zod.number().nullish(),
+  "roomDesc": zod.string().nullish(),
+  "hotScore": zod.number().nullish()
 })),
   "total": zod.number().nullish(),
   "ok": zod.boolean()
@@ -138,7 +155,7 @@ export const GetRoomsResponse = zod.object({
 
 
 /**
- * @summary Get explore/featured content
+ * @summary Explore page data
  */
 export const GetExploreResponse = zod.object({
   "ok": zod.boolean(),
@@ -147,7 +164,7 @@ export const GetExploreResponse = zod.object({
 
 
 /**
- * @summary Check if Egyptian worker is connected
+ * @summary Worker connection status
  */
 export const GetWorkerStatusResponse = zod.object({
   "connected": zod.boolean(),

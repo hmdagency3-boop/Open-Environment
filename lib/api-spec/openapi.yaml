@@ -8,9 +8,7 @@ servers:
     description: Base API path
 tags:
   - name: health
-    description: Health operations
   - name: ditto
-    description: Ditto user & room data
 paths:
   /healthz:
     get:
@@ -19,7 +17,7 @@ paths:
       summary: Health check
       responses:
         "200":
-          description: Healthy
+          description: OK
           content:
             application/json:
               schema:
@@ -29,10 +27,10 @@ paths:
     get:
       operationId: getSession
       tags: [ditto]
-      summary: Get current session status
+      summary: Session status
       responses:
         "200":
-          description: Session info
+          description: OK
           content:
             application/json:
               schema:
@@ -42,10 +40,10 @@ paths:
     get:
       operationId: getBalance
       tags: [ditto]
-      summary: Get own account balance
+      summary: Account balance
       responses:
         "200":
-          description: Balance data
+          description: OK
           content:
             application/json:
               schema:
@@ -55,7 +53,7 @@ paths:
     get:
       operationId: getUserByUid
       tags: [ditto]
-      summary: Lookup user by UID (gifts history)
+      summary: Gift history by UID
       parameters:
         - name: uid
           in: path
@@ -64,19 +62,17 @@ paths:
             type: string
       responses:
         "200":
-          description: User gift data
+          description: OK
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserLookup"
-        "404":
-          description: User not found
 
   /ditto/user/{uid}/profile:
     get:
       operationId: getUserProfile
       tags: [ditto]
-      summary: Get full user profile via worker (name, avatar, followers)
+      summary: Full user profile
       parameters:
         - name: uid
           in: path
@@ -85,7 +81,7 @@ paths:
             type: string
       responses:
         "200":
-          description: User profile data
+          description: OK
           content:
             application/json:
               schema:
@@ -95,7 +91,7 @@ paths:
     get:
       operationId: searchUsers
       tags: [ditto]
-      summary: Search users by name or erbanNo via worker
+      summary: Search users by name or erbanNo
       parameters:
         - name: q
           in: query
@@ -104,7 +100,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Search results
+          description: OK
           content:
             application/json:
               schema:
@@ -114,7 +110,7 @@ paths:
     get:
       operationId: getRooms
       tags: [ditto]
-      summary: Get live rooms list
+      summary: Live rooms list
       parameters:
         - name: tab
           in: query
@@ -133,7 +129,7 @@ paths:
             default: 20
       responses:
         "200":
-          description: Rooms list
+          description: OK
           content:
             application/json:
               schema:
@@ -143,10 +139,10 @@ paths:
     get:
       operationId: getExplore
       tags: [ditto]
-      summary: Get explore/featured content
+      summary: Explore page data
       responses:
         "200":
-          description: Explore page data
+          description: OK
           content:
             application/json:
               schema:
@@ -156,10 +152,10 @@ paths:
     get:
       operationId: getWorkerStatus
       tags: [ditto]
-      summary: Check if Egyptian worker is connected
+      summary: Worker connection status
       responses:
         "200":
-          description: Worker status
+          description: OK
           content:
             application/json:
               schema:
@@ -172,8 +168,7 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
     SessionStatus:
       type: object
@@ -188,8 +183,7 @@ components:
           type: ["integer", "null"]
         ticket_expired:
           type: boolean
-      required:
-        - ticket_expired
+      required: [ticket_expired]
 
     Balance:
       type: object
@@ -204,8 +198,7 @@ components:
           type: integer
         ok:
           type: boolean
-      required:
-        - ok
+      required: [ok]
 
     GiftEntry:
       type: object
@@ -218,9 +211,7 @@ components:
           type: ["integer", "null"]
         icon:
           type: ["string", "null"]
-      required:
-        - giftId
-        - giftName
+      required: [giftId, giftName]
 
     UserLookup:
       type: object
@@ -242,11 +233,7 @@ components:
           type: boolean
         source:
           type: string
-      required:
-        - uid
-        - topGifts
-        - workerUsed
-        - source
+      required: [uid, topGifts, workerUsed, source]
 
     UserProfile:
       type: object
@@ -262,7 +249,7 @@ components:
         signature:
           type: ["string", "null"]
         erbanNo:
-          type: ["string", "null"]
+          type: ["string", "integer", "null"]
         fansNum:
           type: ["integer", "null"]
         followNum:
@@ -273,6 +260,20 @@ components:
           type: ["number", "null"]
         online:
           type: ["boolean", "null"]
+        gender:
+          type: ["integer", "null"]
+        countryCode:
+          type: ["string", "null"]
+        countryName:
+          type: ["string", "null"]
+        countryIcon:
+          type: ["string", "null"]
+        vipLevel:
+          type: ["integer", "null"]
+        vipName:
+          type: ["string", "null"]
+        source:
+          type: ["string", "null"]
         workerUsed:
           type: boolean
         workerNeeded:
@@ -280,11 +281,7 @@ components:
         raw:
           type: ["object", "null"]
           additionalProperties: true
-      required:
-        - ok
-        - uid
-        - workerUsed
-        - workerNeeded
+      required: [ok, uid, workerUsed, workerNeeded]
 
     SearchResult:
       type: object
@@ -301,11 +298,7 @@ components:
           type: boolean
         error:
           type: ["string", "null"]
-      required:
-        - ok
-        - users
-        - workerUsed
-        - workerNeeded
+      required: [ok, users, workerUsed, workerNeeded]
 
     SearchUser:
       type: object
@@ -328,7 +321,7 @@ components:
       type: object
       properties:
         roomId:
-          type: ["string", "null"]
+          type: ["integer", "string", "null"]
         roomName:
           type: ["string", "null"]
         cover:
@@ -336,7 +329,27 @@ components:
         onlineNum:
           type: ["integer", "null"]
         uid:
+          type: ["integer", "string", "null"]
+        nick:
           type: ["string", "null"]
+        erbanNo:
+          type: ["integer", "string", "null"]
+        countryCode:
+          type: ["string", "null"]
+        countryName:
+          type: ["string", "null"]
+        countryIcon:
+          type: ["string", "null"]
+        vipLevel:
+          type: ["integer", "null"]
+        vipName:
+          type: ["string", "null"]
+        gender:
+          type: ["integer", "null"]
+        roomDesc:
+          type: ["string", "null"]
+        hotScore:
+          type: ["integer", "null"]
       required: []
 
     RoomList:
@@ -350,9 +363,7 @@ components:
           type: ["integer", "null"]
         ok:
           type: boolean
-      required:
-        - rooms
-        - ok
+      required: [rooms, ok]
 
     ExploreResult:
       type: object
@@ -362,8 +373,7 @@ components:
         raw:
           type: object
           additionalProperties: true
-      required:
-        - ok
+      required: [ok]
 
     WorkerStatus:
       type: object
@@ -374,6 +384,4 @@ components:
           type: integer
         lastPollAgo:
           type: ["integer", "null"]
-      required:
-        - connected
-        - pendingJobs
+      required: [connected, pendingJobs]

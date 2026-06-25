@@ -8,7 +8,7 @@
 
 export interface Room {
   /** @nullable */
-  roomId?: string | null;
+  roomId?: number | string | null;
   /** @nullable */
   roomName?: string | null;
   /** @nullable */
@@ -16,5 +16,25 @@ export interface Room {
   /** @nullable */
   onlineNum?: number | null;
   /** @nullable */
-  uid?: string | null;
+  uid?: number | string | null;
+  /** @nullable */
+  nick?: string | null;
+  /** @nullable */
+  erbanNo?: number | string | null;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  countryName?: string | null;
+  /** @nullable */
+  countryIcon?: string | null;
+  /** @nullable */
+  vipLevel?: number | null;
+  /** @nullable */
+  vipName?: string | null;
+  /** @nullable */
+  gender?: number | null;
+  /** @nullable */
+  roomDesc?: string | null;
+  /** @nullable */
+  hotScore?: number | null;
 }

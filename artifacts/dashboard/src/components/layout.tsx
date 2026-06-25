@@ -8,13 +8,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const { data: workerStatus } = useGetWorkerStatus({
     query: {
-      refetchInterval: 5000
+      queryKey: ["workerStatus"],
+      refetchInterval: 5000,
     }
   });
 
   const { data: health } = useHealthCheck({
     query: {
-      refetchInterval: 10000
+      queryKey: ["health"],
+      refetchInterval: 10000,
     }
   });
 

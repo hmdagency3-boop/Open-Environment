@@ -92,27 +92,59 @@ async function dittoCall(endpoint: string, params: Record<string, string>, metho
   return json;
 }
 
-// ── Job queue helpers (for worker-routed calls) ───────────────────────────────
-let lastWorkerPollAt = 0;
-
-export function markWorkerPoll() {
-  lastWorkerPollAt = Date.now();
+// ── Room data parser ──────────────────────────────────────────────────────────
+function parseRoom(r: Record<string, unknown>) {
+  const country = r.countryInfo as Record<string, unknown> | null;
+  const vip = r.vipInfoDto as Record<string, unknown> | null;
+  return {
+    roomId:       r.roomId   ?? r.id   ?? null,
+    roomName:     r.title    ?? r.roomName ?? r.name ?? null,
+    cover:        r.avatar   ?? r.cover ?? r.coverImage ?? null,
+    onlineNum:    r.onlineNum ?? r.online ?? null,
+    uid:          r.uid      ?? null,
+    nick:         r.nick     ?? r.nickName ?? null,
+    erbanNo:      r.erbanNo  ?? null,
+    countryCode:  country?.countryShort ?? null,
+    countryName:  country?.countryName  ?? null,
+    countryIcon:  country?.countryIcon  ?? null,
+    vipLevel:     vip?.vipId ?? null,
+    vipName:      vip?.vipName ?? null,
+    gender:       r.gender   ?? null,
+    roomDesc:     r.roomDesc ?? null,
+    hotScore:     r.hotScore ?? null,
+  };
 }
 
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET ?? "";
+// ── Scan rooms to find a user by UID ─────────────────────────────────────────
+// Fetches POPULAR + region tabs and returns the first room owned by the given uid.
+// This lets us extract profile data (nick, avatar, erbanNo, country) without the worker.
+async function findUserInRooms(targetUid: string): Promise<Record<string, unknown> | null> {
+  const tabs = ["POPULAR", "EG", "SA", "AE", "ALL"];
+  for (const tab of tabs) {
+    try {
+      const result = await dittoCall("/home/tab/room", { tab, pageNum: "1", pageSize: "50" }) as Record<string, unknown>;
+      if (result?.code !== 200) continue;
+      const data = result.data as Record<string, unknown>;
+      const list = (data?.listRoom as Record<string, unknown>[]) ?? [];
+      const found = list.find((r) => String(r.uid) === String(targetUid));
+      if (found) return found;
+    } catch { /* skip tab */ }
+  }
+  return null;
+}
+
+// ── Job queue (shared with jobs.ts via globalThis) ────────────────────────────
+let lastWorkerPollAt = 0;
+export function markWorkerPoll() { lastWorkerPollAt = Date.now(); }
 
 interface JobEntry {
-  jobId: string;
-  endpoint: string;
-  params: Record<string, string>;
-  created: number;
-  result?: unknown;
-  done: boolean;
+  jobId: string; endpoint: string; params: Record<string, string>;
+  created: number; result?: unknown; done: boolean;
 }
-
-// Shared job store — same instance used by jobs.ts router
-// We create jobs here and wait for results via long-poll
-declare const globalThis: { _dittoJobs?: Map<string, JobEntry>; _dittoWaiters?: Map<string, ((r: unknown) => void)[]> };
+declare const globalThis: {
+  _dittoJobs?: Map<string, JobEntry>;
+  _dittoWaiters?: Map<string, ((r: unknown) => void)[]>;
+};
 if (!globalThis._dittoJobs) globalThis._dittoJobs = new Map();
 if (!globalThis._dittoWaiters) globalThis._dittoWaiters = new Map();
 
@@ -120,30 +152,15 @@ function makeJobId(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
-/**
- * Queue a job for the worker and wait up to `timeoutMs` for the result.
- * Returns { result, timedOut: false } or { result: null, timedOut: true }.
- */
-function queueWorkerJob(
-  endpoint: string,
-  params: Record<string, string>,
-  timeoutMs = 25000,
-): Promise<{ result: unknown; timedOut: boolean }> {
+function queueWorkerJob(endpoint: string, params: Record<string, string>, timeoutMs = 25000): Promise<{ result: unknown; timedOut: boolean }> {
   const jobId = makeJobId();
-  const job: JobEntry = { jobId, endpoint, params, created: Date.now(), done: false };
-  globalThis._dittoJobs!.set(jobId, job);
-
+  globalThis._dittoJobs!.set(jobId, { jobId, endpoint, params, created: Date.now(), done: false });
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       globalThis._dittoWaiters!.delete(jobId);
       resolve({ result: null, timedOut: true });
     }, timeoutMs);
-
-    const cb = (result: unknown) => {
-      clearTimeout(timer);
-      resolve({ result, timedOut: false });
-    };
-
+    const cb = (result: unknown) => { clearTimeout(timer); resolve({ result, timedOut: false }); };
     const list = globalThis._dittoWaiters!.get(jobId) ?? [];
     list.push(cb);
     globalThis._dittoWaiters!.set(jobId, list);
@@ -174,8 +191,8 @@ router.get("/session", (_req, res) => {
 router.get("/balance", async (_req, res) => {
   try {
     const result = await dittoCall("/purse/query", {}) as Record<string, unknown>;
-    if (result && typeof result === "object" && (result as Record<string, unknown>).code === 200) {
-      const data = (result as Record<string, unknown>).data as Record<string, unknown>;
+    if (result?.code === 200) {
+      const data = result.data as Record<string, unknown>;
       res.json({ ok: true, ...data });
     } else {
       res.json({ ok: false, error: result });
@@ -189,119 +206,131 @@ router.get("/balance", async (_req, res) => {
 router.get("/user/:uid", async (req, res) => {
   const { uid } = req.params;
   if (!uid || !/^\d+$/.test(uid)) {
-    res.status(400).json({ error: "uid must be numeric" });
-    return;
+    res.status(400).json({ error: "uid must be numeric" }); return;
   }
-
   try {
     const giftsResult = await dittoCall("/giftwall/getUserHistoryReceives", { tgUid: uid }) as Record<string, unknown>;
-
     let topGifts: Record<string, unknown>[] = [];
     let totalNum: number | null = null;
     let totalTypes: number | null = null;
-
-    if (giftsResult && (giftsResult as Record<string, unknown>).code === 200) {
-      const data = (giftsResult as Record<string, unknown>).data as Record<string, unknown>;
+    if (giftsResult?.code === 200) {
+      const data = giftsResult.data as Record<string, unknown>;
       const rawList = (data?.topList as Record<string, unknown>[]) ?? [];
       topGifts = rawList.map((g) => ({
-        giftId:   g.giftId ?? null,
-        giftName: g.giftName ?? null,
-        num:      g.num ?? null,
-        icon:     g.icon ?? null,
+        giftId: g.giftId ?? null, giftName: g.giftName ?? null,
+        num: g.num ?? null, icon: g.icon ?? null,
       }));
-      totalNum = (data?.totalNum as number) ?? null;
+      totalNum   = (data?.totalNum as number) ?? null;
       totalTypes = (data?.totalTypeNum as number) ?? null;
     }
-
-    res.json({
-      uid,
-      totalGiftsNum: totalNum,
-      totalGiftTypes: totalTypes,
-      topGifts,
-      profile: null,
-      workerUsed: false,
-      source: "direct",
-    });
+    res.json({ uid, totalGiftsNum: totalNum, totalGiftTypes: totalTypes, topGifts, profile: null, workerUsed: false, source: "direct" });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
 // ── GET /api/ditto/user/:uid/profile ─────────────────────────────────────────
-// Routes through the Egyptian worker (geo-locked endpoint)
+// Strategy: 1) scan live rooms (no worker, no geo-lock)
+//           2) try direct API call (may fail if geo-locked / expired ticket)
+//           3) queue worker job as last resort
 router.get("/user/:uid/profile", async (req, res) => {
   const { uid } = req.params;
   if (!uid || !/^\d+$/.test(uid)) {
-    res.status(400).json({ ok: false, uid, workerUsed: false, workerNeeded: true, error: "uid must be numeric" });
+    res.status(400).json({ ok: false, uid, workerUsed: false, workerNeeded: false });
     return;
   }
 
+  // ── Step 1: scan rooms (free, always works) ──────────────────────────────
+  try {
+    const roomEntry = await findUserInRooms(uid);
+    if (roomEntry) {
+      const country = roomEntry.countryInfo as Record<string, unknown> | null;
+      const vip     = roomEntry.vipInfoDto  as Record<string, unknown> | null;
+      return res.json({
+        ok: true, uid,
+        nickname:   roomEntry.nick       ?? roomEntry.nickName ?? null,
+        avatar:     roomEntry.avatar     ?? null,
+        signature:  roomEntry.roomDesc   ?? null,
+        erbanNo:    roomEntry.erbanNo    ?? null,
+        fansNum:    null,
+        followNum:  null,
+        level:      roomEntry.currRoomLevel ?? null,
+        diamond:    null,
+        online:     true,
+        countryCode: country?.countryShort ?? null,
+        countryName: country?.countryName  ?? null,
+        countryIcon: country?.countryIcon  ?? null,
+        vipLevel:   vip?.vipId   ?? null,
+        vipName:    vip?.vipName ?? null,
+        gender:     roomEntry.gender     ?? null,
+        source:     "live_room",
+        workerUsed: false,
+        workerNeeded: false,
+        raw: null,
+      });
+    }
+  } catch { /* fall through */ }
+
+  // ── Step 2: try direct API (may work if ticket still valid) ──────────────
+  try {
+    const result = await dittoCall("/user/v3/get", { queryUid: uid }) as Record<string, unknown>;
+    if (result?.code === 200) {
+      const d = result.data as Record<string, unknown>;
+      return res.json(buildProfileResponse(uid, d, false, false));
+    }
+  } catch { /* fall through */ }
+
+  // ── Step 3: try worker if connected ─────────────────────────────────────
   const workerConnected = lastWorkerPollAt && (Date.now() - lastWorkerPollAt) < 10000;
-
-  if (!workerConnected) {
-    // Try direct anyway (may work with fresh ticket)
-    try {
-      const result = await dittoCall("/user/v3/get", { queryUid: uid }) as Record<string, unknown>;
-      if (result && (result as Record<string, unknown>).code === 200) {
-        const d = (result as Record<string, unknown>).data as Record<string, unknown>;
-        return res.json(buildProfileResponse(uid, d, false, false));
+  if (workerConnected) {
+    const { result, timedOut } = await queueWorkerJob("/user/v3/get", { queryUid: uid }, 25000);
+    if (!timedOut && result) {
+      const r = result as Record<string, unknown>;
+      if (r.code === 200) {
+        return res.json(buildProfileResponse(uid, r.data as Record<string, unknown>, true, false));
       }
-    } catch { /* fall through */ }
-
-    return res.json({
-      ok: false, uid, nickname: null, avatar: null, signature: null,
-      erbanNo: null, fansNum: null, followNum: null, level: null,
-      diamond: null, online: null, workerUsed: false, workerNeeded: true, raw: null,
-    });
+    }
   }
 
-  // Queue a job for the worker
-  const { result, timedOut } = await queueWorkerJob("/user/v3/get", { queryUid: uid }, 25000);
-
-  if (timedOut || !result) {
-    return res.json({
-      ok: false, uid, nickname: null, avatar: null, signature: null,
-      erbanNo: null, fansNum: null, followNum: null, level: null,
-      diamond: null, online: null, workerUsed: true, workerNeeded: false,
-      raw: null, error: timedOut ? "Worker timeout" : "No result",
-    });
-  }
-
-  const r = result as Record<string, unknown>;
-  if (r.code === 200) {
-    const d = r.data as Record<string, unknown>;
-    return res.json(buildProfileResponse(uid, d, true, false));
-  }
-
+  // ── Not found anywhere ───────────────────────────────────────────────────
   return res.json({
     ok: false, uid, nickname: null, avatar: null, signature: null,
     erbanNo: null, fansNum: null, followNum: null, level: null,
-    diamond: null, online: null, workerUsed: true, workerNeeded: false,
-    raw: r, error: `API code ${r.code}`,
+    diamond: null, online: false, countryCode: null, countryName: null,
+    countryIcon: null, vipLevel: null, vipName: null, gender: null,
+    source: "not_found",
+    workerUsed: false,
+    workerNeeded: !workerConnected,
+    raw: null,
   });
 });
 
 function buildProfileResponse(uid: string, d: Record<string, unknown>, workerUsed: boolean, workerNeeded: boolean) {
+  const country = d.countryInfo as Record<string, unknown> | null;
+  const vip     = d.vipInfoDto  as Record<string, unknown> | null;
   return {
-    ok: true,
-    uid,
-    nickname:  d.nickName  ?? d.nickname  ?? null,
-    avatar:    d.avatar    ?? d.headImg   ?? null,
-    signature: d.signature ?? d.sign      ?? null,
-    erbanNo:   d.erbanNo   ?? d.erbano    ?? null,
-    fansNum:   d.fansNum   ?? d.fans      ?? null,
-    followNum: d.followNum ?? d.follow    ?? null,
-    level:     d.level     ?? d.lv        ?? null,
-    diamond:   d.diamond   ?? d.diamondNum ?? null,
-    online:    d.online    ?? null,
-    workerUsed,
-    workerNeeded,
-    raw: d,
+    ok: true, uid,
+    nickname:   d.nickName  ?? d.nickname  ?? null,
+    avatar:     d.avatar    ?? d.headImg   ?? null,
+    signature:  d.signature ?? d.sign      ?? null,
+    erbanNo:    d.erbanNo   ?? d.erbano    ?? null,
+    fansNum:    d.fansNum   ?? d.fans      ?? null,
+    followNum:  d.followNum ?? d.follow    ?? null,
+    level:      d.level     ?? d.lv        ?? null,
+    diamond:    d.diamond   ?? d.diamondNum ?? null,
+    online:     d.online    ?? null,
+    countryCode: country?.countryShort ?? null,
+    countryName: country?.countryName  ?? null,
+    countryIcon: country?.countryIcon  ?? null,
+    vipLevel:   vip?.vipId   ?? null,
+    vipName:    vip?.vipName ?? null,
+    gender:     d.gender    ?? null,
+    source:     "api",
+    workerUsed, workerNeeded, raw: d,
   };
 }
 
 // ── GET /api/ditto/search ─────────────────────────────────────────────────────
-// Search users by nickname or erbanNo via worker
 router.get("/search", async (req, res) => {
   const q = (req.query.q as string ?? "").trim();
   if (!q) {
@@ -311,33 +340,26 @@ router.get("/search", async (req, res) => {
 
   const workerConnected = lastWorkerPollAt && (Date.now() - lastWorkerPollAt) < 10000;
 
-  if (!workerConnected) {
-    // Try direct call
-    try {
-      const result = await dittoCall("/user/search", { keyword: q }) as Record<string, unknown>;
-      if (result && (result as Record<string, unknown>).code === 200) {
-        const list = extractSearchList(result);
-        return res.json({ ok: true, users: list, workerUsed: false, workerNeeded: false });
-      }
-    } catch { /* fall through */ }
+  // Try direct call first (may work without geo-lock for search)
+  try {
+    const result = await dittoCall("/user/search", { keyword: q }) as Record<string, unknown>;
+    if (result?.code === 200) {
+      return res.json({ ok: true, users: extractSearchList(result), workerUsed: false, workerNeeded: false });
+    }
+  } catch { /* fall through */ }
 
+  if (!workerConnected) {
     return res.json({ ok: false, users: [], workerUsed: false, workerNeeded: true });
   }
 
   const { result, timedOut } = await queueWorkerJob("/user/search", { keyword: q }, 25000);
-
   if (timedOut || !result) {
-    return res.json({
-      ok: false, users: [], workerUsed: true, workerNeeded: false,
-      error: timedOut ? "Worker timeout" : "No result",
-    });
+    return res.json({ ok: false, users: [], workerUsed: true, workerNeeded: false, error: timedOut ? "Worker timeout" : "No result" });
   }
-
   const r = result as Record<string, unknown>;
   if (r.code === 200) {
     return res.json({ ok: true, users: extractSearchList(r), workerUsed: true, workerNeeded: false });
   }
-
   return res.json({ ok: false, users: [], workerUsed: true, workerNeeded: false, error: `API code ${r.code}` });
 });
 
@@ -345,35 +367,26 @@ function extractSearchList(result: Record<string, unknown>): Record<string, unkn
   const data = result.data as Record<string, unknown> ?? {};
   const raw = (data.list ?? data.userList ?? data.users ?? []) as Record<string, unknown>[];
   return raw.map((u) => ({
-    uid:      u.uid ?? null,
-    nickname: u.nickName ?? u.nickname ?? null,
-    avatar:   u.avatar ?? u.headImg ?? null,
-    erbanNo:  u.erbanNo ?? null,
-    fansNum:  u.fansNum ?? null,
-    level:    u.level ?? u.lv ?? null,
+    uid: u.uid ?? null, nickname: u.nickName ?? u.nickname ?? null,
+    avatar: u.avatar ?? u.headImg ?? null, erbanNo: u.erbanNo ?? null,
+    fansNum: u.fansNum ?? null, level: u.level ?? u.lv ?? null,
   }));
 }
 
 // ── GET /api/ditto/rooms ──────────────────────────────────────────────────────
 router.get("/rooms", async (req, res) => {
-  const tab = (req.query.tab as string) ?? "POPULAR";
-  const pageNum = (req.query.pageNum as string) ?? "1";
+  const tab      = (req.query.tab as string)      ?? "POPULAR";
+  const pageNum  = (req.query.pageNum as string)  ?? "1";
   const pageSize = (req.query.pageSize as string) ?? "20";
 
   try {
     const result = await dittoCall("/home/tab/room", { tab, pageNum, pageSize }) as Record<string, unknown>;
-    if (result && (result as Record<string, unknown>).code === 200) {
-      const data = (result as Record<string, unknown>).data as Record<string, unknown>;
+    if (result?.code === 200) {
+      const data = result.data as Record<string, unknown>;
       const list = (data?.listRoom as Record<string, unknown>[])
         ?? (data?.list as Record<string, unknown>[])
         ?? [];
-      const rooms = list.map((r) => ({
-        roomId:    r.roomId ?? r.id ?? null,
-        roomName:  r.roomName ?? r.name ?? null,
-        cover:     r.cover ?? r.coverImage ?? null,
-        onlineNum: r.onlineNum ?? r.online ?? null,
-        uid:       r.uid ?? null,
-      }));
+      const rooms = list.map(parseRoom);
       res.json({ ok: true, rooms, total: (data?.total ?? list.length) });
     } else {
       res.json({ ok: false, rooms: [], total: null, error: result });
@@ -387,7 +400,7 @@ router.get("/rooms", async (req, res) => {
 router.get("/explore", async (_req, res) => {
   try {
     const result = await dittoCall("/explore/info", { pageNo: "1", pageSize: "20" }) as Record<string, unknown>;
-    if (result && (result as Record<string, unknown>).code === 200) {
+    if (result?.code === 200) {
       res.json({ ok: true, raw: (result as Record<string, unknown>).data });
     } else {
       res.json({ ok: false, raw: result });

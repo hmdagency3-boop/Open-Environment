@@ -127,7 +127,7 @@ export const getGetSessionUrl = () => {
 }
 
 /**
- * @summary Get current session status
+ * @summary Session status
  */
 export const getSession = async ( options?: RequestInit): Promise<SessionStatus> => {
 
@@ -174,7 +174,7 @@ export type GetSessionQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get current session status
+ * @summary Session status
  */
 
 export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorType<unknown>>(
@@ -204,7 +204,7 @@ export const getGetBalanceUrl = () => {
 }
 
 /**
- * @summary Get own account balance
+ * @summary Account balance
  */
 export const getBalance = async ( options?: RequestInit): Promise<Balance> => {
 
@@ -251,7 +251,7 @@ export type GetBalanceQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get own account balance
+ * @summary Account balance
  */
 
 export function useGetBalance<TData = Awaited<ReturnType<typeof getBalance>>, TError = ErrorType<unknown>>(
@@ -281,7 +281,7 @@ export const getGetUserByUidUrl = (uid: string,) => {
 }
 
 /**
- * @summary Lookup user by UID (gifts history)
+ * @summary Gift history by UID
  */
 export const getUserByUid = async (uid: string, options?: RequestInit): Promise<UserLookup> => {
 
@@ -305,7 +305,7 @@ export const getGetUserByUidQueryKey = (uid: string,) => {
     }
 
 
-export const getGetUserByUidQueryOptions = <TData = Awaited<ReturnType<typeof getUserByUid>>, TError = ErrorType<void>>(uid: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUserByUid>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetUserByUidQueryOptions = <TData = Awaited<ReturnType<typeof getUserByUid>>, TError = ErrorType<unknown>>(uid: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUserByUid>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -324,14 +324,14 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetUserByUidQueryResult = NonNullable<Awaited<ReturnType<typeof getUserByUid>>>
-export type GetUserByUidQueryError = ErrorType<void>
+export type GetUserByUidQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Lookup user by UID (gifts history)
+ * @summary Gift history by UID
  */
 
-export function useGetUserByUid<TData = Awaited<ReturnType<typeof getUserByUid>>, TError = ErrorType<void>>(
+export function useGetUserByUid<TData = Awaited<ReturnType<typeof getUserByUid>>, TError = ErrorType<unknown>>(
  uid: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUserByUid>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -358,7 +358,7 @@ export const getGetUserProfileUrl = (uid: string,) => {
 }
 
 /**
- * @summary Get full user profile via worker (name, avatar, followers)
+ * @summary Full user profile
  */
 export const getUserProfile = async (uid: string, options?: RequestInit): Promise<UserProfile> => {
 
@@ -405,7 +405,7 @@ export type GetUserProfileQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get full user profile via worker (name, avatar, followers)
+ * @summary Full user profile
  */
 
 export function useGetUserProfile<TData = Awaited<ReturnType<typeof getUserProfile>>, TError = ErrorType<unknown>>(
@@ -442,7 +442,7 @@ export const getSearchUsersUrl = (params: SearchUsersParams,) => {
 }
 
 /**
- * @summary Search users by name or erbanNo via worker
+ * @summary Search users by name or erbanNo
  */
 export const searchUsers = async (params: SearchUsersParams, options?: RequestInit): Promise<SearchResult> => {
 
@@ -489,7 +489,7 @@ export type SearchUsersQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Search users by name or erbanNo via worker
+ * @summary Search users by name or erbanNo
  */
 
 export function useSearchUsers<TData = Awaited<ReturnType<typeof searchUsers>>, TError = ErrorType<unknown>>(
@@ -526,7 +526,7 @@ export const getGetRoomsUrl = (params?: GetRoomsParams,) => {
 }
 
 /**
- * @summary Get live rooms list
+ * @summary Live rooms list
  */
 export const getRooms = async (params?: GetRoomsParams, options?: RequestInit): Promise<RoomList> => {
 
@@ -573,7 +573,7 @@ export type GetRoomsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get live rooms list
+ * @summary Live rooms list
  */
 
 export function useGetRooms<TData = Awaited<ReturnType<typeof getRooms>>, TError = ErrorType<unknown>>(
@@ -603,7 +603,7 @@ export const getGetExploreUrl = () => {
 }
 
 /**
- * @summary Get explore/featured content
+ * @summary Explore page data
  */
 export const getExplore = async ( options?: RequestInit): Promise<ExploreResult> => {
 
@@ -650,7 +650,7 @@ export type GetExploreQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get explore/featured content
+ * @summary Explore page data
  */
 
 export function useGetExplore<TData = Awaited<ReturnType<typeof getExplore>>, TError = ErrorType<unknown>>(
@@ -680,7 +680,7 @@ export const getGetWorkerStatusUrl = () => {
 }
 
 /**
- * @summary Check if Egyptian worker is connected
+ * @summary Worker connection status
  */
 export const getWorkerStatus = async ( options?: RequestInit): Promise<WorkerStatus> => {
 
@@ -727,7 +727,7 @@ export type GetWorkerStatusQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Check if Egyptian worker is connected
+ * @summary Worker connection status
  */
 
 export function useGetWorkerStatus<TData = Awaited<ReturnType<typeof getWorkerStatus>>, TError = ErrorType<unknown>>(
