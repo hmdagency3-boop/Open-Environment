@@ -4,24 +4,28 @@
  * AES Key: a38e5f04f39b11ed | IV: 884e00163e02b26e
  *
  * الاستخدام:
- *   node re-work/ditto_api.js session                       عرض الـ session الحالية
- *   node re-work/ditto_api.js login <access_token> <uid>    حفظ session
- *   node re-work/ditto_api.js setup-push <url> <secret>     ربط Replit للـ auto-push
- *   node re-work/ditto_api.js refresh                       تجديد ticket يدوياً
- *   node re-work/ditto_api.js refresh-push                  تجديد + بعت لـ Replit مرة واحدة
- *   node re-work/ditto_api.js daemon                        تجديد ticket كل 55 دقيقة (محلي فقط)
- *   node re-work/ditto_api.js daemon-push                   تجديد + بعت لـ Replit كل 55 دقيقة ✅
- *   node re-work/ditto_api.js call <endpoint> [k=v ...]     استدعاء API
- *   node re-work/ditto_api.js decrypt "<base64>"            فك تشفير
- *   node re-work/ditto_api.js encrypt "plain text"          تشفير
+ *   node ditto_api.js session                          عرض الـ session الحالية
+ *   node ditto_api.js login <access_token> <uid>       حفظ session
+ *   node ditto_api.js setup-proxy <host> <port>        ربط proxy (جهازك في مصر)
+ *   node ditto_api.js setup-push <url> <secret>        ربط Replit للـ auto-push
+ *   node ditto_api.js refresh                          تجديد ticket يدوياً
+ *   node ditto_api.js refresh-push                     تجديد + بعت لـ Replit مرة واحدة
+ *   node ditto_api.js daemon                           تجديد ticket كل 55 دقيقة (محلي فقط)
+ *   node ditto_api.js daemon-push                      تجديد + بعت لـ Replit كل 55 دقيقة ✅
+ *   node ditto_api.js call <endpoint> [k=v ...]        استدعاء API
+ *   node ditto_api.js decrypt "<base64>"               فك تشفير
+ *   node ditto_api.js encrypt "plain text"             تشفير
  *
- * ⚠️  ملاحظة الـ version-lock:
- *   بعض الـ endpoints ترجع 10003 "Please update app version" عند الاستدعاء من Replit
- *   بسبب CDN geo-routing — نفس الـ endpoints تعمل من NOX/Android محلياً.
+ * 🌍 حل مشكلة 10003 (CDN Geo-Routing):
+ *   الـ US CDN يرجع 10003 لبعض الـ endpoints — الحل: شغّل local_proxy.js على جهازك في مصر
+ *   بعدين: node ditto_api.js setup-proxy <IP_بتاعك> 7474
+ *   وكل الـ requests هتعدي من IP مصري وتشتغل تمام.
  */
 
 const crypto = require('crypto');
 const https  = require('https');
+const http   = require('http');
+const net    = require('net');
 const zlib   = require('zlib');
 const fs     = require('fs');
 const path   = require('path');
@@ -108,28 +112,107 @@ function makeHeaders(extra = {}) {
   };
 }
 
-function httpRaw(method, reqPath, body = null) {
+/**
+ * Open an HTTP CONNECT tunnel to targetHost:targetPort through the proxy,
+ * then upgrade to TLS. Returns a Promise<tls.TLSSocket>.
+ *
+ * We buffer ALL data that arrives before/during the TLS handshake to avoid
+ * losing bytes that arrive in the same packet as the "200 Connection Established".
+ */
+function connectThroughProxy(proxyHost, proxyPort, targetHost, targetPort, secret) {
   return new Promise((resolve, reject) => {
-    const extra = body
-      ? { 'content-type': 'application/x-www-form-urlencoded', 'content-length': Buffer.byteLength(body).toString() }
-      : {};
-    const headers = makeHeaders(extra);
+    const tcp = net.connect({ host: proxyHost, port: proxyPort }, () => {
+      tcp.write(
+        `CONNECT ${targetHost}:${targetPort} HTTP/1.1\r\n` +
+        `Host: ${targetHost}:${targetPort}\r\n` +
+        `x-proxy-secret: ${secret}\r\n` +
+        `\r\n`
+      );
+    });
+    tcp.on('error', reject);
 
-    const req = https.request({ hostname: HOST, port: 443, path: reqPath, method, headers }, res => {
-      const chunks = [];
-      res.on('data', c => chunks.push(c));
-      res.on('end', () => {
-        let raw = Buffer.concat(chunks);
-        if (res.headers['content-encoding'] === 'gzip') {
-          try { raw = zlib.gunzipSync(raw); } catch (e) {}
-        }
-        resolve({ status: res.statusCode, body: raw.toString('utf8') });
+    // Accumulate bytes until we see the end of the CONNECT response headers
+    const headerBufs = [];
+    tcp.on('data', function onData(chunk) {
+      headerBufs.push(chunk);
+      const joined = Buffer.concat(headerBufs);
+      const sep    = joined.indexOf('\r\n\r\n');
+      if (sep === -1) return; // not yet
+
+      tcp.removeListener('data', onData);
+      const headerStr = joined.slice(0, sep).toString('ascii');
+      if (!headerStr.startsWith('HTTP/1.1 200')) {
+        tcp.destroy();
+        return reject(new Error('Proxy CONNECT failed: ' + headerStr.split('\r\n')[0]));
+      }
+
+      // Any bytes after the header boundary belong to the TLS handshake
+      const leftover = joined.slice(sep + 4);
+
+      const tls = require('tls');
+      const tlsSock = tls.connect({ socket: tcp, servername: targetHost, rejectUnauthorized: true }, () => {
+        resolve(tlsSock);
+      });
+      tlsSock.on('error', reject);
+
+      // Push leftover bytes back into the TLS socket's read buffer
+      if (leftover.length > 0) tlsSock.unshift(leftover);
+    });
+  });
+}
+
+/**
+ * Make an HTTPS request, optionally tunnelled through the local proxy.
+ * Uses Node's built-in https.request (which handles chunked, gzip, keep-alive, etc.)
+ * over a pre-established TLS socket when a proxy is configured.
+ */
+function httpRaw(method, reqPath, body = null) {
+  const session = loadSession();
+  const proxy   = session._proxy;
+
+  const extra = body
+    ? { 'content-type': 'application/x-www-form-urlencoded', 'content-length': Buffer.byteLength(body).toString() }
+    : {};
+  const headers = makeHeaders(extra);
+
+  function makeRequest(options) {
+    return new Promise((resolve, reject) => {
+      const req = https.request(options, res => {
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => {
+          let raw = Buffer.concat(chunks);
+          if (res.headers['content-encoding'] === 'gzip') {
+            try { raw = zlib.gunzipSync(raw); } catch (e) {}
+          }
+          resolve({ status: res.statusCode, body: raw.toString('utf8') });
+        });
+      });
+      req.on('error', reject);
+      if (body) req.write(body);
+      req.end();
+    });
+  }
+
+  // ── via proxy (Egyptian IP) ──────────────────────────────────────────────
+  if (proxy) {
+    return connectThroughProxy(
+      proxy.host, proxy.port, HOST, 443, proxy.secret
+    ).then(tlsSock => {
+      return makeRequest({
+        hostname: HOST,
+        port:     443,
+        path:     reqPath,
+        method,
+        headers,
+        // hand our pre-established TLS socket to https.request
+        createConnection: () => tlsSock,
       });
     });
-    req.on('error', reject);
-    if (body) req.write(body);
-    req.end();
-  });
+  }
+
+  // ── direct (Replit IP — ⚡ endpoints may return 10003) ─────────────────
+  return makeRequest({ hostname: HOST, port: 443, path: reqPath, method, headers });
 }
 
 async function apiCall(method, endpoint, params = null, { silent = false } = {}) {
@@ -359,17 +442,20 @@ async function main() {
   if (!cmd || cmd === 'help') {
     console.log('\n=== Ditto API Client ===');
     console.log('Key: a38e5f04f39b11ed | IV: 884e00163e02b26e\n');
+    const proxySet = !!loadSession()._proxy;
     console.log('الأوامر:');
-    console.log('  session                        عرض الـ session الحالية');
-    console.log('  login <token> <uid> [deviceId] حفظ session جديد');
-    console.log('  setup-push <url> <secret>      ربط Replit — يُحفظ في session مرة واحدة');
-    console.log('  refresh                        تجديد ticket الآن (محلي فقط)');
-    console.log('  refresh-push                   تجديد ticket + بعته لـ Replit فوراً');
-    console.log('  daemon                         تجديد ticket كل 55 دقيقة (محلي)');
-    console.log('  daemon-push                    تجديد + بعت لـ Replit كل 55 دقيقة ✅ الأفضل');
-    console.log('  call <endpoint> [k=v ...]      استدعاء API');
-    console.log('  decrypt "<base64>"             فك تشفير');
-    console.log('  encrypt "plain text"           تشفير\n');
+    console.log('  session                           عرض الـ session الحالية');
+    console.log('  login <token> <uid> [deviceId]    حفظ session جديد');
+    console.log('  setup-proxy <IP> [port] [secret]  ربط proxy على جهازك في مصر' + (proxySet ? ' ✅ مُعدّ' : ' ← الحل للـ 10003'));
+    console.log('  remove-proxy                      إزالة الـ proxy');
+    console.log('  setup-push <url> <secret>         ربط Replit — يُحفظ في session مرة واحدة');
+    console.log('  refresh                           تجديد ticket الآن (محلي فقط)');
+    console.log('  refresh-push                      تجديد ticket + بعته لـ Replit فوراً');
+    console.log('  daemon                            تجديد ticket كل 55 دقيقة (محلي)');
+    console.log('  daemon-push                       تجديد + بعت لـ Replit كل 55 دقيقة ✅ الأفضل');
+    console.log('  call <endpoint> [k=v ...]         استدعاء API');
+    console.log('  decrypt "<base64>"                فك تشفير');
+    console.log('  encrypt "plain text"              تشفير\n');
     console.log('Endpoints (✅ = يعمل من Replit | ⚡ = يعمل من NOX فقط):');
     Object.entries(ENDPOINTS).forEach(([ep, info]) => {
       console.log('  ' + ep.padEnd(40) + info.desc);
@@ -417,6 +503,36 @@ async function main() {
       console.error('❌', e.message);
       console.log('💡 يمكنك إضافة ticket يدوياً من Frida أو NOX');
     }
+    return;
+  }
+
+  if (cmd === 'setup-proxy') {
+    const host   = args[1];
+    const port   = parseInt(args[2] || '7474', 10);
+    const secret = args[3];
+    if (!host || !secret) {
+      console.log('الاستخدام: node ditto_api.js setup-proxy <IP_جهازك> <port> <secret>');
+      console.log('');
+      console.log('💡 الخطوات:');
+      console.log('   1. شغّل على جهازك:  node local_proxy.js');
+      console.log('      (هيطبعلك الـ SECRET تلقائياً)');
+      console.log('   2. بعدين هنا:       node ditto_api.js setup-proxy <IP> 7474 <SECRET>');
+      return;
+    }
+    const session = loadSession();
+    session._proxy = { host, port, secret };
+    saveSession(session);
+    console.log(`✅ Proxy مُعدّ: ${host}:${port}`);
+    console.log('   كل الـ requests دلوقتي هتعدي من IP مصري ← هتشتغل الـ ⚡ endpoints تمام');
+    console.log('\n🧪 جرّب: node ditto_api.js call /user/v3/get queryUid=281306');
+    return;
+  }
+
+  if (cmd === 'remove-proxy') {
+    const session = loadSession();
+    delete session._proxy;
+    saveSession(session);
+    console.log('✅ Proxy اتشال — الـ requests هترجع تتبعت مباشرةً من Replit');
     return;
   }
 
@@ -505,7 +621,13 @@ async function main() {
     const method = info ? info.method : 'GET';
 
     if (info && info.desc.startsWith('⚡')) {
-      console.log('⚠️  هذا الـ endpoint يعمل من NOX/Android فقط — قد يرجع 10003 من Replit');
+      const proxySet = !!loadSession()._proxy;
+      if (proxySet) {
+        console.log('🌍 هذا الـ endpoint هيشتغل عبر proxy (IP مصري) ✅');
+      } else {
+        console.log('⚠️  هذا الـ endpoint يرجع 10003 من Replit بسبب CDN geo-routing');
+        console.log('   💡 الحل: شغّل local_proxy.js على جهازك ونفّذ: node ditto_api.js setup-proxy <IP_بتاعك>');
+      }
     }
 
     const result = await apiCall(method, endpoint, params);
