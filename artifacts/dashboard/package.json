@@ -76,6 +76,7 @@
   },
   "dependencies": {
     "agora-rtc-sdk-ng": "^4.24.4",
-    "agora-rtm-sdk": "^2.2.4"
+    "agora-rtm-sdk": "^2.2.4",
+    "nim-web-sdk-ng": "^10.10.0"
   }
 }

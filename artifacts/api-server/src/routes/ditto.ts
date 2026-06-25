@@ -207,8 +207,9 @@ router.patch("/session/ticket", (req, res) => {
 
 // ── POST /api/ditto/session/inject ───────────────────────────────────────────
 // Inject a full new session after re-login (ticket + access_token + uid required)
+// Optional: netEaseToken (for NIM chatroom), nimAppKey (override NIM app key)
 router.post("/session/inject", (req, res) => {
-  const { ticket, access_token, uid } = req.body ?? {};
+  const { ticket, access_token, uid, netEaseToken, nimAppKey } = req.body ?? {};
   if (!ticket || typeof ticket !== "string") { res.status(400).json({ ok: false, error: "ticket required" }); return; }
   if (!access_token || typeof access_token !== "string") { res.status(400).json({ ok: false, error: "access_token required" }); return; }
   if (!uid) { res.status(400).json({ ok: false, error: "uid required" }); return; }
@@ -221,10 +222,37 @@ router.post("/session/inject", (req, res) => {
     session.uid = String(uid);
     session.ticket_saved_at = now;
     session.access_token_saved_at = now;
+    if (typeof netEaseToken === "string" && netEaseToken.trim()) {
+      session.netEaseToken = netEaseToken.trim();
+    }
+    if (typeof nimAppKey === "string" && nimAppKey.trim()) {
+      session.nimAppKey = nimAppKey.trim();
+    }
     writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2));
-    res.json({ ok: true, uid: session.uid, ticket_prefix: ticket.slice(0, 8) + "..." });
+    res.json({ ok: true, uid: session.uid, ticket_prefix: ticket.slice(0, 8) + "...", hasNimToken: !!session.netEaseToken });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// ── GET /api/ditto/nim-credentials ───────────────────────────────────────────
+// Returns NIM chatroom credentials for the frontend chat SDK.
+// nimAppKey falls back to the candidate extracted from the APK DEX.
+router.get("/nim-credentials", (_req, res) => {
+  try {
+    const session = JSON.parse(readFileSync(SESSION_FILE, "utf8")) as Record<string, unknown>;
+    const nimAppKey = (session.nimAppKey as string | undefined) || "a1f28028ba4e22c11cfaffe0e37ae27b";
+    const netEaseToken = session.netEaseToken as string | undefined;
+    const uid = session.uid as string | undefined;
+    res.json({
+      ok: true,
+      nimAppKey,
+      nimAccount: uid ?? null,
+      nimToken: netEaseToken ?? null,
+      hasToken: !!netEaseToken,
+    });
+  } catch {
+    res.json({ ok: false, nimAppKey: null, nimAccount: null, nimToken: null, hasToken: false });
   }
 });
 

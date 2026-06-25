@@ -15,7 +15,7 @@ export default function Home() {
   const { data: roomsData, isLoading: roomsLoading } = useGetRooms({ tab: "POPULAR", pageNum: 1, pageSize: 4 });
 
   const [showInject, setShowInject] = useState(false);
-  const [injectFields, setInjectFields] = useState({ ticket: "", access_token: "", uid: "" });
+  const [injectFields, setInjectFields] = useState({ ticket: "", access_token: "", uid: "", netEaseToken: "", nimAppKey: "" });
   const [injectState, setInjectState] = useState<"idle"|"loading"|"ok"|"err">("idle");
   const [injectMsg, setInjectMsg] = useState("");
 
@@ -34,8 +34,8 @@ export default function Home() {
       const data = await res.json() as { ok: boolean; uid?: string; ticket_prefix?: string; error?: string };
       if (data.ok) {
         setInjectState("ok");
-        setInjectMsg(`Session saved — UID: ${data.uid}, ticket: ${data.ticket_prefix}`);
-        setInjectFields({ ticket: "", access_token: "", uid: "" });
+        setInjectMsg(`Session saved — UID: ${data.uid}, ticket: ${data.ticket_prefix}${(data as Record<string,unknown>).hasNimToken ? " ✓ NIM token" : ""}`);
+        setInjectFields({ ticket: "", access_token: "", uid: "", netEaseToken: "", nimAppKey: "" });
         setShowInject(false);
         queryClient.invalidateQueries();
       } else {
@@ -94,7 +94,7 @@ export default function Home() {
           <form onSubmit={handleInject} className="space-y-3">
             {(["uid", "access_token", "ticket"] as const).map((field) => (
               <div key={field} className="space-y-1">
-                <label className="text-xs text-muted-foreground uppercase tracking-wider">{field.replace("_", " ")}</label>
+                <label className="text-xs text-muted-foreground uppercase tracking-wider">{field.replace(/_/g, " ")}</label>
                 <input
                   type="text"
                   value={injectFields[field]}
@@ -105,6 +105,31 @@ export default function Home() {
                 />
               </div>
             ))}
+            <div className="border-t border-border/40 pt-3 space-y-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
+                NIM Chat (optional — needed for live comments)
+              </p>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground uppercase tracking-wider">netEaseToken</label>
+                <input
+                  type="text"
+                  value={injectFields.netEaseToken}
+                  onChange={e => setInjectFields(p => ({ ...p, netEaseToken: e.target.value }))}
+                  placeholder="from /acc/third/login → netEaseToken"
+                  className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground uppercase tracking-wider">NIM App Key (override)</label>
+                <input
+                  type="text"
+                  value={injectFields.nimAppKey}
+                  onChange={e => setInjectFields(p => ({ ...p, nimAppKey: e.target.value }))}
+                  placeholder="from Frida → getNetEaseKey() (optional)"
+                  className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60"
+                />
+              </div>
+            </div>
             {injectMsg && (
               <p className={`text-xs font-bold ${injectState === "ok" ? "text-primary" : "text-destructive"}`}>
                 {injectState === "ok" ? "✅ " : "⚠ "}{injectMsg}

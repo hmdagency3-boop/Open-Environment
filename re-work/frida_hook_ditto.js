@@ -43,7 +43,7 @@ Java.perform(function () {
 
   const methodNames = [
     'getAk', 'getAkIv', 'getDk', 'getEk',
-    'getNetEaseKey', 'getAgoraKey',
+    'getNetEaseKey', 'getAgoraKey', 'getAppId',
     'getTmpSecretKey', 'getQnSecretKey',
     'encrypt', 'decrypt',
     'encryptAES', 'decryptAES',

@@ -29,6 +29,7 @@ interface ActiveSession {
 interface ChatMessage {
   id:   string;
   uid:  string;
+  nick: string;
   text: string;
   ts:   number;
 }
@@ -42,8 +43,8 @@ export default function Rooms() {
   // ── Chat state ───────────────────────────────────────────────────────────────
   const [chatOpen,     setChatOpen]     = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatStatus,   setChatStatus]   = useState<"idle" | "connecting" | "connected" | "failed">("idle");
-  const rtmRef    = useRef<{ client: unknown; channel: unknown } | null>(null);
+  const [chatStatus,   setChatStatus]   = useState<"idle" | "connecting" | "connected" | "failed" | "no_credentials">("idle");
+  const nimChatroomRef = useRef<unknown>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // ── Search state ────────────────────────────────────────────────────────────
@@ -94,50 +95,86 @@ export default function Rooms() {
     { query: { queryKey: getGetRoomsQueryKey({ tab: activeTab, pageNum: 1, pageSize: 30 }) } }
   );
 
-  // ── RTM chat connect/disconnect via useEffect ────────────────────────────────
+  // ── NIM chatroom connect/disconnect via useEffect ────────────────────────────
   useEffect(() => {
     if (!activeSession) {
-      // Cleanup RTM on disconnect
-      if (rtmRef.current) {
-        const { client, channel } = rtmRef.current as { client: any; channel: any };
-        channel.leave().catch(() => {});
-        client.logout().catch(() => {});
-        rtmRef.current = null;
+      if (nimChatroomRef.current) {
+        try { (nimChatroomRef.current as any).exit(); } catch {}
+        nimChatroomRef.current = null;
       }
       setChatMessages([]);
       setChatStatus("idle");
       return;
     }
-    // Connect RTM for this room
     setChatStatus("connecting");
     setChatMessages([]);
     let cancelled = false;
+
     (async () => {
       try {
-        const AgoraRTM = (await import("agora-rtm-sdk")).default;
+        const credsRes = await fetch("/api/ditto/nim-credentials");
+        const creds = await credsRes.json() as {
+          ok: boolean; nimAppKey: string; nimAccount: string | null;
+          nimToken: string | null; hasToken: boolean;
+        };
         if (cancelled) return;
-        const client = AgoraRTM.createInstance(AGORA_APP_ID);
-        await client.login({ uid: String(SESSION_UID), token: null });
-        if (cancelled) { client.logout().catch(() => {}); return; }
-        const channel = client.createChannel(activeSession.roomId);
-        await channel.join();
-        if (cancelled) { channel.leave().catch(() => {}); client.logout().catch(() => {}); return; }
-        channel.on("ChannelMessage", (msg: any, memberId: string) => {
-          let text = "";
-          try { text = typeof msg.text === "string" ? msg.text : JSON.stringify(msg); } catch { text = "[msg]"; }
-          setChatMessages(prev => {
-            const next = [...prev.slice(-299), { id: Date.now().toString() + memberId, uid: memberId, text, ts: Date.now() }];
-            return next;
-          });
-          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+
+        if (!creds.hasToken || !creds.nimToken) {
+          if (!cancelled) setChatStatus("no_credentials");
+          return;
+        }
+
+        const ChatroomMod = await import("nim-web-sdk-ng/dist/v1/CHATROOM_BROWSER_SDK");
+        const Chatroom = (ChatroomMod as any).default ?? ChatroomMod;
+        if (cancelled) return;
+
+        const chatroom = Chatroom.getInstance({
+          appKey: creds.nimAppKey,
+          account: creds.nimAccount ?? String(SESSION_UID),
+          token: creds.nimToken,
+          chatroomId: String(activeSession.roomId),
+          chatroomNick: "monitor",
+          onconnect: () => {
+            if (!cancelled) setChatStatus("connected");
+          },
+          onmsgs: (msgs: any[]) => {
+            if (cancelled) return;
+            const newMsgs: ChatMessage[] = msgs
+              .filter(m => m.type === "text" || m.text || m.type === "custom")
+              .map(m => ({
+                id: m.idClient ?? (Date.now() + Math.random()).toString(),
+                uid: m.fromAccount ?? "?",
+                nick: m.fromNick ?? "",
+                text: m.text ?? (typeof m.attach?.content === "string"
+                  ? m.attach.content
+                  : JSON.stringify(m.attach ?? m.custom ?? "")),
+                ts: m.time ?? Date.now(),
+              }));
+            if (newMsgs.length === 0) return;
+            setChatMessages(prev => [...prev, ...newMsgs].slice(-300));
+            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+          },
+          ondisconnect: () => {
+            if (!cancelled) setChatStatus("idle");
+          },
+          onerror: () => {
+            if (!cancelled) setChatStatus("failed");
+          },
         });
-        rtmRef.current = { client, channel };
-        if (!cancelled) setChatStatus("connected");
+
+        nimChatroomRef.current = chatroom;
       } catch {
         if (!cancelled) setChatStatus("failed");
       }
     })();
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+      if (nimChatroomRef.current) {
+        try { (nimChatroomRef.current as any).exit(); } catch {}
+        nimChatroomRef.current = null;
+      }
+    };
   }, [activeSession?.roomId]);
 
   // Auto-scroll on new messages
@@ -362,7 +399,8 @@ export default function Rooms() {
                 <span className={`w-1.5 h-1.5 rounded-full ${
                   chatStatus === "connected" ? "bg-green-400" :
                   chatStatus === "connecting" ? "bg-yellow-400 animate-pulse" :
-                  chatStatus === "failed" ? "bg-destructive" : "bg-muted"
+                  chatStatus === "failed" ? "bg-destructive" :
+                  chatStatus === "no_credentials" ? "bg-orange-400" : "bg-muted"
                 }`} />
                 <span className="text-[9px] text-muted-foreground uppercase tracking-wider">{chatStatus}</span>
               </div>
@@ -375,14 +413,21 @@ export default function Rooms() {
                 <div className="flex items-center justify-center h-20 text-muted-foreground">
                   <div className="text-center">
                     <Loader2 className="w-4 h-4 animate-spin mx-auto mb-1" />
-                    <p className="text-[9px] uppercase tracking-widest">Connecting to RTM...</p>
+                    <p className="text-[9px] uppercase tracking-widest">Connecting to NIM...</p>
                   </div>
                 </div>
               )}
               {chatStatus === "failed" && (
                 <div className="p-2 border border-destructive/30 bg-destructive/5 text-[9px] text-destructive">
-                  <p className="font-bold">RTM_CONNECT_FAILED</p>
-                  <p className="mt-1 text-destructive/70">Ditto uses NetEase NIM for chat — requires fresh netEaseToken from login flow.</p>
+                  <p className="font-bold">NIM_CONNECT_FAILED</p>
+                  <p className="mt-1 text-destructive/70">Connection to NIM chatroom failed. Verify NIM App Key is correct (check Frida getNetEaseKey output).</p>
+                </div>
+              )}
+              {chatStatus === "no_credentials" && (
+                <div className="p-2 border border-orange-400/30 bg-orange-400/5 text-[9px] text-orange-400">
+                  <p className="font-bold">NO_NIM_TOKEN</p>
+                  <p className="mt-1 text-orange-400/70">netEaseToken missing. Capture it from the Ditto login flow (/acc/third/login response) and add it via the Session Inject dialog.</p>
+                  <p className="mt-2 font-mono text-[8px] text-orange-300/60">Frida: getNetEaseKey() → NIM App Key</p>
                 </div>
               )}
               {chatStatus === "connected" && chatMessages.length === 0 && (
@@ -395,7 +440,9 @@ export default function Rooms() {
               )}
               {chatMessages.map(msg => (
                 <div key={msg.id} className="text-[10px] leading-relaxed group">
-                  <span className="text-primary/70 font-bold mr-1.5">UID:{msg.uid}</span>
+                  <span className="text-primary/70 font-bold mr-1">
+                    {msg.nick || `UID:${msg.uid}`}
+                  </span>
                   <span className="text-foreground/80 break-words">{msg.text}</span>
                 </div>
               ))}
