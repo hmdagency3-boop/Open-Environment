@@ -298,13 +298,23 @@ async function callViaWorker(endpoint, params, method) {
 async function refreshTicket(session) {
   if (!session.access_token) throw new Error('No access_token — login first');
 
-  console.log('🔄 Refreshing ticket...');
-  const result = await apiCall('POST', '/oauth/ticket', {
-    access_token: session.access_token,
-    deviceId:     session.deviceId,
-    issue_type:   'multi',
-    simCountry:   'eg',
-  }, { silent: true });
+  // Try direct first (US IP — works if CDN allows)
+  console.log('🔄 Refreshing ticket via worker (Egyptian IP)...');
+  const params = {
+    access_token:  session.access_token,
+    deviceId:      session.deviceId,
+    issue_type:    'multi',
+    simCountry:    'eg',
+    _method:       'POST',
+    _skipSession:  'true',   // don't inject expired ticket on the worker side
+  };
+
+  let result;
+  try {
+    result = await callViaWorker('/oauth/ticket', params, 'POST');
+  } catch (e) {
+    throw new Error('Ticket refresh via worker failed: ' + e.message);
+  }
 
   if (!result || result.code !== 200) {
     const msg = result?.message || 'Unknown error';

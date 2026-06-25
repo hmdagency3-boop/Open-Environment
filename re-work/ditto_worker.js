@@ -109,13 +109,20 @@ function makeHeaders() {
 
 async function dittoCall(endpoint, params, method = 'GET') {
   const session = loadSession();
-  const merged  = {
-    ticket:     session.ticket   || '',
-    uid:        session.uid      || '',
-    deviceId:   session.deviceId || '',
-    simCountry: 'eg',
-    ...params,
-  };
+
+  // _skipSession = don't inject expired ticket/uid (used for /oauth/ticket refresh)
+  const skipSession = params._skipSession === 'true' || params._skipSession === true;
+  delete params._skipSession;
+
+  const merged = skipSession
+    ? { simCountry: 'eg', ...params }
+    : {
+        ticket:     session.ticket   || '',
+        uid:        session.uid      || '',
+        deviceId:   session.deviceId || '',
+        simCountry: 'eg',
+        ...params,
+      };
 
   const plain = new URLSearchParams(merged).toString();
   const enc   = encrypt(plain);
