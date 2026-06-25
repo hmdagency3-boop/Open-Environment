@@ -55,7 +55,7 @@ paths:
     get:
       operationId: getUserByUid
       tags: [ditto]
-      summary: Lookup user by UID (gifts + profile via worker)
+      summary: Lookup user by UID (gifts history)
       parameters:
         - name: uid
           in: path
@@ -64,13 +64,51 @@ paths:
             type: string
       responses:
         "200":
-          description: User data
+          description: User gift data
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserLookup"
         "404":
           description: User not found
+
+  /ditto/user/{uid}/profile:
+    get:
+      operationId: getUserProfile
+      tags: [ditto]
+      summary: Get full user profile via worker (name, avatar, followers)
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User profile data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  /ditto/search:
+    get:
+      operationId: searchUsers
+      tags: [ditto]
+      summary: Search users by name or erbanNo via worker
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResult"
 
   /ditto/rooms:
     get:
@@ -178,6 +216,8 @@ components:
           type: string
         num:
           type: ["integer", "null"]
+        icon:
+          type: ["string", "null"]
       required:
         - giftId
         - giftName
@@ -207,6 +247,82 @@ components:
         - topGifts
         - workerUsed
         - source
+
+    UserProfile:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        uid:
+          type: string
+        nickname:
+          type: ["string", "null"]
+        avatar:
+          type: ["string", "null"]
+        signature:
+          type: ["string", "null"]
+        erbanNo:
+          type: ["string", "null"]
+        fansNum:
+          type: ["integer", "null"]
+        followNum:
+          type: ["integer", "null"]
+        level:
+          type: ["integer", "null"]
+        diamond:
+          type: ["number", "null"]
+        online:
+          type: ["boolean", "null"]
+        workerUsed:
+          type: boolean
+        workerNeeded:
+          type: boolean
+        raw:
+          type: ["object", "null"]
+          additionalProperties: true
+      required:
+        - ok
+        - uid
+        - workerUsed
+        - workerNeeded
+
+    SearchResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchUser"
+        workerUsed:
+          type: boolean
+        workerNeeded:
+          type: boolean
+        error:
+          type: ["string", "null"]
+      required:
+        - ok
+        - users
+        - workerUsed
+        - workerNeeded
+
+    SearchUser:
+      type: object
+      properties:
+        uid:
+          type: ["string", "integer", "null"]
+        nickname:
+          type: ["string", "null"]
+        avatar:
+          type: ["string", "null"]
+        erbanNo:
+          type: ["string", "null"]
+        fansNum:
+          type: ["integer", "null"]
+        level:
+          type: ["integer", "null"]
+      required: []
 
     Room:
       type: object

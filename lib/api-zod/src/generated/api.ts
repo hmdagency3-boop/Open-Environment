@@ -41,7 +41,7 @@ export const GetBalanceResponse = zod.object({
 
 
 /**
- * @summary Lookup user by UID (gifts + profile via worker)
+ * @summary Lookup user by UID (gifts history)
  */
 export const GetUserByUidParams = zod.object({
   "uid": zod.coerce.string()
@@ -54,11 +54,60 @@ export const GetUserByUidResponse = zod.object({
   "topGifts": zod.array(zod.object({
   "giftId": zod.number(),
   "giftName": zod.string(),
-  "num": zod.number().nullish()
+  "num": zod.number().nullish(),
+  "icon": zod.string().nullish()
 })),
   "profile": zod.record(zod.string(), zod.unknown()).nullish(),
   "workerUsed": zod.boolean(),
   "source": zod.string()
+})
+
+
+/**
+ * @summary Get full user profile via worker (name, avatar, followers)
+ */
+export const GetUserProfileParams = zod.object({
+  "uid": zod.coerce.string()
+})
+
+export const GetUserProfileResponse = zod.object({
+  "ok": zod.boolean(),
+  "uid": zod.string(),
+  "nickname": zod.string().nullish(),
+  "avatar": zod.string().nullish(),
+  "signature": zod.string().nullish(),
+  "erbanNo": zod.string().nullish(),
+  "fansNum": zod.number().nullish(),
+  "followNum": zod.number().nullish(),
+  "level": zod.number().nullish(),
+  "diamond": zod.number().nullish(),
+  "online": zod.boolean().nullish(),
+  "workerUsed": zod.boolean(),
+  "workerNeeded": zod.boolean(),
+  "raw": zod.record(zod.string(), zod.unknown()).nullish()
+})
+
+
+/**
+ * @summary Search users by name or erbanNo via worker
+ */
+export const SearchUsersQueryParams = zod.object({
+  "q": zod.coerce.string()
+})
+
+export const SearchUsersResponse = zod.object({
+  "ok": zod.boolean(),
+  "users": zod.array(zod.object({
+  "uid": zod.union([zod.string(),zod.number()]).nullish(),
+  "nickname": zod.string().nullish(),
+  "avatar": zod.string().nullish(),
+  "erbanNo": zod.string().nullish(),
+  "fansNum": zod.number().nullish(),
+  "level": zod.number().nullish()
+})),
+  "workerUsed": zod.boolean(),
+  "workerNeeded": zod.boolean(),
+  "error": zod.string().nullish()
 })
 
 

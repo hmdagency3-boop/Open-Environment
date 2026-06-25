@@ -34,6 +34,8 @@ export interface GiftEntry {
   giftName: string;
   /** @nullable */
   num?: number | null;
+  /** @nullable */
+  icon?: string | null;
 }
 
 /**
@@ -52,6 +54,62 @@ export interface UserLookup {
   profile?: UserLookupProfile;
   workerUsed: boolean;
   source: string;
+}
+
+/**
+ * @nullable
+ */
+export type UserProfileRaw = { [key: string]: unknown } | null;
+
+export interface UserProfile {
+  ok: boolean;
+  uid: string;
+  /** @nullable */
+  nickname?: string | null;
+  /** @nullable */
+  avatar?: string | null;
+  /** @nullable */
+  signature?: string | null;
+  /** @nullable */
+  erbanNo?: string | null;
+  /** @nullable */
+  fansNum?: number | null;
+  /** @nullable */
+  followNum?: number | null;
+  /** @nullable */
+  level?: number | null;
+  /** @nullable */
+  diamond?: number | null;
+  /** @nullable */
+  online?: boolean | null;
+  workerUsed: boolean;
+  workerNeeded: boolean;
+  /** @nullable */
+  raw?: UserProfileRaw;
+}
+
+export interface SearchUser {
+  /** @nullable */
+  uid?: string | number | null;
+  /** @nullable */
+  nickname?: string | null;
+  /** @nullable */
+  avatar?: string | null;
+  /** @nullable */
+  erbanNo?: string | null;
+  /** @nullable */
+  fansNum?: number | null;
+  /** @nullable */
+  level?: number | null;
+}
+
+export interface SearchResult {
+  ok: boolean;
+  users: SearchUser[];
+  workerUsed: boolean;
+  workerNeeded: boolean;
+  /** @nullable */
+  error?: string | null;
 }
 
 export interface Room {
@@ -87,6 +145,10 @@ export interface WorkerStatus {
   /** @nullable */
   lastPollAgo?: number | null;
 }
+
+export type SearchUsersParams = {
+q: string;
+};
 
 export type GetRoomsParams = {
 tab?: string;

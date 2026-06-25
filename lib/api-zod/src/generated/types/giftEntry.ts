@@ -11,4 +11,6 @@ export interface GiftEntry {
   giftName: string;
   /** @nullable */
   num?: number | null;
+  /** @nullable */
+  icon?: string | null;
 }
