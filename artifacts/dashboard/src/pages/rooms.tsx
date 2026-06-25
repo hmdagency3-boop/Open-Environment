@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useGetRooms, getGetRoomsQueryKey, Room } from "@workspace/api-client-react";
+import { useGetRooms, getGetRoomsQueryKey, Room, useGetTrtcToken } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LayoutGrid, Users, Radio, User } from "lucide-react";
+import { LayoutGrid, Users, Radio, User, Zap, Copy, Check, Loader2, X } from "lucide-react";
 
 const TABS = ["POPULAR", "EG", "SA", "AE"];
 
@@ -76,9 +76,38 @@ export default function Rooms() {
 // ── Room card ─────────────────────────────────────────────────────────────────
 function RoomCard({ room }: { room: Room }) {
   const hasCover = !!room.cover;
+  const [showToken, setShowToken] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const { mutate: fetchToken, data: tokenData, isPending, reset } = useGetTrtcToken();
+
+  const roomId = room.roomId != null ? String(room.roomId) : null;
+
+  function handleGetToken(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!roomId) return;
+    setShowToken(true);
+    fetchToken({ data: { roomId, type: "1", channel: "1" } });
+  }
+
+  function handleClose(e: React.MouseEvent) {
+    e.stopPropagation();
+    setShowToken(false);
+    reset();
+    setCopied(false);
+  }
+
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!tokenData?.token) return;
+    navigator.clipboard.writeText(tokenData.token).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   return (
-    <Card className="bg-card rounded-none border-border overflow-hidden group hover:border-primary/70 transition-colors cursor-pointer relative flex flex-col">
+    <Card className="bg-card rounded-none border-border overflow-hidden group hover:border-primary/50 transition-colors relative flex flex-col">
       {/* Cover image */}
       <div className="relative w-full aspect-[4/3] bg-muted flex items-center justify-center overflow-hidden shrink-0">
         {/* LIVE badge */}
@@ -118,11 +147,21 @@ function RoomCard({ room }: { room: Room }) {
           <Users className="w-3 h-3" />
           {room.onlineNum?.toLocaleString() ?? 0}
         </div>
+
+        {/* TRTC button — bottom-left of image */}
+        {roomId && (
+          <button
+            onClick={handleGetToken}
+            className="absolute bottom-2 left-2 z-10 flex items-center gap-1 bg-black/70 border border-primary/40 text-primary hover:bg-primary/20 hover:border-primary transition-colors px-2 py-1 text-[10px] font-bold tracking-widest uppercase"
+          >
+            <Zap className="w-2.5 h-2.5" /> TRTC
+          </button>
+        )}
       </div>
 
       {/* Info section */}
       <div className="p-3 flex gap-3 items-start flex-1">
-        {/* Host avatar (reuse cover as avatar fallback) */}
+        {/* Host avatar */}
         <div className="w-8 h-8 rounded-none border border-border/50 overflow-hidden bg-muted flex items-center justify-center shrink-0">
           {hasCover ? (
             <img src={room.cover!} alt="" className="w-full h-full object-cover"
@@ -133,15 +172,12 @@ function RoomCard({ room }: { room: Room }) {
         </div>
 
         <div className="flex-1 min-w-0">
-          {/* Host nickname */}
           <div className="font-bold text-foreground text-sm leading-tight truncate">
             {room.nick ?? room.roomName ?? "UNNAMED"}
           </div>
-          {/* Room title */}
           {room.roomName && room.nick && room.roomName !== room.nick && (
             <div className="text-xs text-muted-foreground truncate mt-0.5">{room.roomName}</div>
           )}
-          {/* Meta row */}
           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
             {room.erbanNo != null && (
               <span className="text-[10px] text-primary/70">ID:{room.erbanNo}</span>
@@ -155,6 +191,48 @@ function RoomCard({ room }: { room: Room }) {
           </div>
         </div>
       </div>
+
+      {/* TRTC Token panel — slides in below info when active */}
+      {showToken && (
+        <div className="border-t border-primary/30 bg-black/60 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-primary font-bold tracking-widest uppercase flex items-center gap-1">
+              <Zap className="w-3 h-3" /> TRTC Token
+            </span>
+            <button onClick={handleClose} className="text-muted-foreground hover:text-foreground transition-colors">
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+
+          {isPending ? (
+            <div className="flex items-center gap-2 text-muted-foreground text-xs">
+              <Loader2 className="w-3 h-3 animate-spin" /> Fetching...
+            </div>
+          ) : tokenData?.ok && tokenData.token ? (
+            <>
+              <div className="bg-background/80 border border-border/50 p-2 rounded-none">
+                <p className="text-[9px] text-primary/70 font-mono break-all leading-relaxed">
+                  {tokenData.token}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
+                <span>roomId: <span className="text-foreground font-bold">{roomId}</span></span>
+                <span>ch: <span className="text-foreground font-bold">{tokenData.channel ?? 1}</span></span>
+              </div>
+              <button
+                onClick={handleCopy}
+                className="w-full flex items-center justify-center gap-1.5 border border-border/50 hover:border-primary/50 text-[10px] font-bold tracking-widest uppercase py-1.5 transition-colors hover:text-primary"
+              >
+                {copied ? <><Check className="w-3 h-3 text-green-400" /> COPIED</> : <><Copy className="w-3 h-3" /> COPY TOKEN</>}
+              </button>
+            </>
+          ) : (
+            <p className="text-[10px] text-destructive font-bold">
+              {tokenData ? "FETCH_FAILED" : "NO_RESPONSE"}
+            </p>
+          )}
+        </div>
+      )}
     </Card>
   );
 }

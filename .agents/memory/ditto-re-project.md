@@ -79,17 +79,17 @@ user-agent:      okhttp/4.12.0
 | Field | Value |
 |-------|-------|
 | uid | `281306` |
-| ticket | `e3e7bc6d30eaa492746ba3c242253007` (~60 min TTL, captured June 24 2026) |
-| access_token | `ed93ba1f476a042efd8b86ed851234bb` |
-| deviceId | `27e0073c1e0d132a0b66a84ff8ada5baa` |
+| ticket | [redacted — stored in re-work/ditto_session.json] |
+| access_token | [redacted — stored in re-work/ditto_session.json] |
+| deviceId | [redacted — stored in re-work/ditto_session.json] |
 | simCountry | `eg` |
 
 ### Session B — uid=1283476 (backup, from flows_(2))
 | Field | Value |
 |-------|-------|
 | uid | `1283476` |
-| access_token | `791aa515f219b46df5ec79ff2e2c813f` (may be expired) |
-| ticket | `8fdbe3534e4ba316718a38a220f71ade` (likely expired) |
+| access_token | [redacted — likely expired] |
+| ticket | [redacted — likely expired] |
 
 **Session file:** `re-work/ditto_session.json`
 
@@ -114,9 +114,9 @@ user-agent:      okhttp/4.12.0
 
 ---
 
-## 📋 Endpoints — Confirmed Working From Replit ✅ (14 total)
+## 📋 Endpoints — Confirmed Working From Replit ✅ (15 total)
 
-Tested live, batch-verified June 24 2026:
+Tested live, batch-verified June 24-25 2026:
 
 | Endpoint | Method | Notes |
 |----------|--------|-------|
@@ -135,6 +135,7 @@ Tested live, batch-verified June 24 2026:
 | `/room/lucky/bag/getConf` | GET | إعدادات الحقيبة المحظوظة |
 | `/home/get/continents` | GET | قائمة القارات |
 | `/giftwall/getUserHistoryReceives` | GET | هدايا مستخدم — tgUid=... **يعمل!** |
+| `/room/getTRtcToken` | POST | توكن TRTC — roomId, type=1, **channel=1** ⚠️ (مش CDN-locked! وبيشتغل حتى مع ticket منتهية) |
 
 ---
 
@@ -176,7 +177,7 @@ Tested live, batch-verified June 24 2026:
 | `/headwear/queryHistoryHeadwearList` | POST | تاريخ الأغطية — tgUid=... |
 | `/sud/game/select/total/record` | POST | إحصائيات لعبة — gameId=1001 targetUid=... |
 | `/fans/list` | GET | المتابعون — pageNo=1 pageSize=20 |
-| `/room/getTRtcToken` | POST | توكن TRTC — roomId=... type=1 channel=0 |
+| ~~`/room/getTRtcToken`~~ | — | **مُصحَّح: يعمل من Replit — انتقل للقائمة العاملة** |
 | `/imsvr/v1/sendText` | POST | إرسال رسالة — roomId=... type=1 content=... |
 | `/imsvr/v1/v3/fetchRoomMembers` | POST | أعضاء الغرفة — roomId=... limit=50 |
 | `/room/rocket/reEnter` | POST | إعادة دخول صاروخ — roomUid=... roomType=3 |

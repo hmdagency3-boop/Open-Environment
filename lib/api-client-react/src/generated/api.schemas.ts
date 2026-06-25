@@ -173,6 +173,16 @@ export interface ExploreResult {
   raw?: ExploreResultRaw;
 }
 
+export interface TrtcTokenResult {
+  ok: boolean;
+  /** @nullable */
+  token?: string | null;
+  /** @nullable */
+  privateMapKey?: string | null;
+  /** @nullable */
+  channel?: number | null;
+}
+
 export interface WorkerStatus {
   connected: boolean;
   pendingJobs: number;
@@ -182,6 +192,12 @@ export interface WorkerStatus {
 
 export type SearchUsersParams = {
 q: string;
+};
+
+export type GetTrtcTokenBody = {
+  roomId: string;
+  type?: string;
+  channel?: string;
 };
 
 export type GetRoomsParams = {

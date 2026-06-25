@@ -119,6 +119,26 @@ export const SearchUsersResponse = zod.object({
 
 
 /**
+ * @summary Get TRTC token for a room (works without geo restriction, even with expired ticket)
+ */
+export const getTrtcTokenBodyTypeDefault = `1`;
+export const getTrtcTokenBodyChannelDefault = `1`;
+
+export const GetTrtcTokenBody = zod.object({
+  "roomId": zod.string(),
+  "type": zod.string().default(getTrtcTokenBodyTypeDefault),
+  "channel": zod.string().default(getTrtcTokenBodyChannelDefault)
+})
+
+export const GetTrtcTokenResponse = zod.object({
+  "ok": zod.boolean(),
+  "token": zod.string().nullish(),
+  "privateMapKey": zod.string().nullish(),
+  "channel": zod.number().nullish()
+})
+
+
+/**
  * @summary Live rooms list
  */
 export const getRoomsQueryTabDefault = `POPULAR`;

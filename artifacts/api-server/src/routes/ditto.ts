@@ -373,6 +373,32 @@ function extractSearchList(result: Record<string, unknown>): Record<string, unkn
   }));
 }
 
+// ── POST /api/ditto/trtc-token ────────────────────────────────────────────────
+// Works from Replit even with an expired ticket (ticket is not validated server-side).
+// Returns a Tencent TRTC "007e..." token — pass directly to TRTC SDK.
+// Correct params (from live flow): roomId, type=1, channel=1 (NOT 0)
+router.post("/trtc-token", async (req, res) => {
+  const { roomId, type = "1", channel = "1" } = req.body ?? {};
+  if (!roomId || !/^\d+$/.test(String(roomId))) {
+    res.status(400).json({ ok: false, error: "roomId (numeric) required" }); return;
+  }
+  try {
+    const result = await dittoCall(
+      "/room/getTRtcToken",
+      { roomId: String(roomId), type: String(type), channel: String(channel) },
+      "POST"
+    ) as Record<string, unknown>;
+    if (result?.code === 200) {
+      const data = result.data as Record<string, unknown>;
+      res.json({ ok: true, token: data?.token ?? null, privateMapKey: data?.privateMapKey ?? "", channel: data?.channel ?? null });
+    } else {
+      res.json({ ok: false, error: result });
+    }
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
 // ── GET /api/ditto/rooms ──────────────────────────────────────────────────────
 router.get("/rooms", async (req, res) => {
   const tab      = (req.query.tab as string)      ?? "POPULAR";

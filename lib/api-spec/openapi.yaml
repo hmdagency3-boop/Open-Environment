@@ -106,6 +106,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/SearchResult"
 
+  /ditto/trtc-token:
+    post:
+      operationId: getTrtcToken
+      tags: [ditto]
+      summary: Get TRTC token for a room (works without geo restriction, even with expired ticket)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roomId]
+              properties:
+                roomId:
+                  type: string
+                type:
+                  type: string
+                  default: "1"
+                channel:
+                  type: string
+                  default: "1"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrtcTokenResult"
+
   /ditto/rooms:
     get:
       operationId: getRooms
@@ -373,6 +402,19 @@ components:
         raw:
           type: object
           additionalProperties: true
+      required: [ok]
+
+    TrtcTokenResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        token:
+          type: ["string", "null"]
+        privateMapKey:
+          type: ["string", "null"]
+        channel:
+          type: ["integer", "null"]
       required: [ok]
 
     WorkerStatus:
