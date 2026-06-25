@@ -225,6 +225,9 @@ importers:
       agora-rtc-sdk-ng:
         specifier: ^4.24.4
         version: 4.24.4
+      agora-rtm-sdk:
+        specifier: ^2.2.4
+        version: 2.2.4(agora-rtc-sdk-ng@4.24.4)
     devDependencies:
       '@hookform/resolvers':
         specifier: ^3.10.0
@@ -1760,6 +1763,11 @@ packages:
 
   agora-rte-extension@1.2.4:
     resolution: {integrity: sha512-0ovZz1lbe30QraG1cU+ji7EnQ8aUu+Hf3F+a8xPml3wPOyUQEK6CTdxV9kMecr9t+fIDrGeW7wgJTsM1DQE7Nw==}
+
+  agora-rtm-sdk@2.2.4:
+    resolution: {integrity: sha512-0PVcvsjvacvuWiacI6ndgvAqyUgmOXlQtILXrEvj1EeA7cHAhnT8/mW7OwDBhcf3BzWuG4g78mKzqe5iPOygVQ==}
+    peerDependencies:
+      agora-rtc-sdk-ng: 4.23.0
 
   ajv-draft-04@1.0.0:
     resolution: {integrity: sha512-mv00Te6nmYbRp5DCwclxtt7yV/joXJPGS7nM+97GdxvuttCOfgI3K4U25zboyeX0O+myI8ERluxQe5wljMmVIw==}
@@ -4607,6 +4615,10 @@ snapshots:
       - supports-color
 
   agora-rte-extension@1.2.4: {}
+
+  agora-rtm-sdk@2.2.4(agora-rtc-sdk-ng@4.24.4):
+    dependencies:
+      agora-rtc-sdk-ng: 4.24.4
 
   ajv-draft-04@1.0.0(ajv@8.20.0):
     optionalDependencies:

@@ -75,6 +75,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "agora-rtc-sdk-ng": "^4.24.4"
+    "agora-rtc-sdk-ng": "^4.24.4",
+    "agora-rtm-sdk": "^2.2.4"
   }
 }

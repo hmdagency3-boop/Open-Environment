@@ -3,7 +3,7 @@ import { useGetRooms, getGetRoomsQueryKey, Room, useGetTrtcToken } from "@worksp
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LayoutGrid, Users, Radio, User, Zap, Copy, Check, Loader2, X, Headphones, Volume2, VolumeX, Mic, MicOff, Search, XCircle } from "lucide-react";
+import { LayoutGrid, Users, Radio, User, Zap, Copy, Check, Loader2, X, Headphones, Volume2, VolumeX, Mic, MicOff, Search, XCircle, MessageSquare } from "lucide-react";
 import AgoraRTC, { IAgoraRTCClient, IRemoteAudioTrack, IMicrophoneAudioTrack } from "agora-rtc-sdk-ng";
 
 const TABS = ["POPULAR", "EG", "SA", "AE"];
@@ -26,11 +26,25 @@ interface ActiveSession {
   micMuted:    boolean;
 }
 
+interface ChatMessage {
+  id:   string;
+  uid:  string;
+  text: string;
+  ts:   number;
+}
+
 export default function Rooms() {
   const [activeTab, setActiveTab] = useState(TABS[0]);
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
   const [isMuted,   setIsMuted]   = useState(false);
   const [isMicMuted, setIsMicMuted] = useState(false);
+
+  // ── Chat state ───────────────────────────────────────────────────────────────
+  const [chatOpen,     setChatOpen]     = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatStatus,   setChatStatus]   = useState<"idle" | "connecting" | "connected" | "failed">("idle");
+  const rtmRef    = useRef<{ client: unknown; channel: unknown } | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // ── Search state ────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
@@ -79,6 +93,57 @@ export default function Rooms() {
     { tab: activeTab, pageNum: 1, pageSize: 30 },
     { query: { queryKey: getGetRoomsQueryKey({ tab: activeTab, pageNum: 1, pageSize: 30 }) } }
   );
+
+  // ── RTM chat connect/disconnect via useEffect ────────────────────────────────
+  useEffect(() => {
+    if (!activeSession) {
+      // Cleanup RTM on disconnect
+      if (rtmRef.current) {
+        const { client, channel } = rtmRef.current as { client: any; channel: any };
+        channel.leave().catch(() => {});
+        client.logout().catch(() => {});
+        rtmRef.current = null;
+      }
+      setChatMessages([]);
+      setChatStatus("idle");
+      return;
+    }
+    // Connect RTM for this room
+    setChatStatus("connecting");
+    setChatMessages([]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const AgoraRTM = (await import("agora-rtm-sdk")).default;
+        if (cancelled) return;
+        const client = AgoraRTM.createInstance(AGORA_APP_ID);
+        await client.login({ uid: String(SESSION_UID), token: null });
+        if (cancelled) { client.logout().catch(() => {}); return; }
+        const channel = client.createChannel(activeSession.roomId);
+        await channel.join();
+        if (cancelled) { channel.leave().catch(() => {}); client.logout().catch(() => {}); return; }
+        channel.on("ChannelMessage", (msg: any, memberId: string) => {
+          let text = "";
+          try { text = typeof msg.text === "string" ? msg.text : JSON.stringify(msg); } catch { text = "[msg]"; }
+          setChatMessages(prev => {
+            const next = [...prev.slice(-299), { id: Date.now().toString() + memberId, uid: memberId, text, ts: Date.now() }];
+            return next;
+          });
+          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+        });
+        rtmRef.current = { client, channel };
+        if (!cancelled) setChatStatus("connected");
+      } catch {
+        if (!cancelled) setChatStatus("failed");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeSession?.roomId]);
+
+  // Auto-scroll on new messages
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages.length]);
 
   const stopSession = useCallback(async () => {
     if (!activeSession) return;
@@ -258,6 +323,23 @@ export default function Rooms() {
               {isMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
               {isMuted ? "MUTED" : "LIVE"}
             </button>
+            {/* Chat toggle */}
+            <button
+              onClick={() => setChatOpen(o => !o)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold tracking-widest border transition-colors relative ${
+                chatOpen
+                  ? "border-primary/60 text-primary bg-primary/10"
+                  : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40"
+              }`}
+            >
+              <MessageSquare className="w-3 h-3" />
+              CHAT
+              {chatMessages.length > 0 && !chatOpen && (
+                <span className="absolute -top-1.5 -right-1.5 bg-primary text-primary-foreground text-[8px] font-black rounded-full w-4 h-4 flex items-center justify-center">
+                  {chatMessages.length > 99 ? "99" : chatMessages.length}
+                </span>
+              )}
+            </button>
             <button
               onClick={stopSession}
               className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold tracking-widest border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors"
@@ -268,7 +350,62 @@ export default function Rooms() {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto pb-8">
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* ── Chat panel ─────────────────────────────────────────────────────── */}
+        {chatOpen && activeSession && (
+          <div className="w-72 shrink-0 border-r border-border flex flex-col bg-background/50 font-mono">
+            {/* Panel header */}
+            <div className="border-b border-border px-3 py-2 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-3 h-3 text-primary" />
+                <span className="text-[10px] font-bold tracking-widest uppercase text-primary">LIVE CHAT</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  chatStatus === "connected" ? "bg-green-400" :
+                  chatStatus === "connecting" ? "bg-yellow-400 animate-pulse" :
+                  chatStatus === "failed" ? "bg-destructive" : "bg-muted"
+                }`} />
+                <span className="text-[9px] text-muted-foreground uppercase tracking-wider">{chatStatus}</span>
+              </div>
+              <span className="text-[9px] text-muted-foreground">{chatMessages.length} msgs</span>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1.5">
+              {chatStatus === "connecting" && chatMessages.length === 0 && (
+                <div className="flex items-center justify-center h-20 text-muted-foreground">
+                  <div className="text-center">
+                    <Loader2 className="w-4 h-4 animate-spin mx-auto mb-1" />
+                    <p className="text-[9px] uppercase tracking-widest">Connecting to RTM...</p>
+                  </div>
+                </div>
+              )}
+              {chatStatus === "failed" && (
+                <div className="p-2 border border-destructive/30 bg-destructive/5 text-[9px] text-destructive">
+                  <p className="font-bold">RTM_CONNECT_FAILED</p>
+                  <p className="mt-1 text-destructive/70">Ditto uses NetEase NIM for chat — requires fresh netEaseToken from login flow.</p>
+                </div>
+              )}
+              {chatStatus === "connected" && chatMessages.length === 0 && (
+                <div className="flex items-center justify-center h-20 text-muted-foreground">
+                  <div className="text-center">
+                    <MessageSquare className="w-4 h-4 mx-auto mb-1 opacity-30" />
+                    <p className="text-[9px] uppercase tracking-widest opacity-60">Waiting for messages...</p>
+                  </div>
+                </div>
+              )}
+              {chatMessages.map(msg => (
+                <div key={msg.id} className="text-[10px] leading-relaxed group">
+                  <span className="text-primary/70 font-bold mr-1.5">UID:{msg.uid}</span>
+                  <span className="text-foreground/80 break-words">{msg.text}</span>
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+          </div>
+        )}
+
+        {/* ── Main room grid ──────────────────────────────────────────────────── */}
+        <div className="flex-1 overflow-auto pb-8">
         {/* Search error */}
         {isSearchMode && searchError && (
           <div className="border border-destructive/40 bg-destructive/5 p-4 text-destructive text-xs font-bold font-mono mb-4">
@@ -423,7 +560,8 @@ export default function Rooms() {
             </div>
           </div>
         )}
-      </div>
+        </div>{/* end room grid column */}
+      </div>{/* end flex row */}
     </div>
   );
 }
