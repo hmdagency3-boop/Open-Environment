@@ -1,15 +1,52 @@
+import { useState } from "react";
 import { useGetSession, useGetBalance, useGetExplore, useGetRooms } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Activity, Database, Key, Zap, LayoutGrid, Users, Radio } from "lucide-react";
+import { Activity, Database, Key, Zap, LayoutGrid, Users, Radio, AlertTriangle, RefreshCw } from "lucide-react";
 import { Link } from "wouter";
 
 export default function Home() {
+  const queryClient = useQueryClient();
   const { data: session, isLoading: sessionLoading } = useGetSession();
   const { data: balance, isLoading: balanceLoading } = useGetBalance();
   const { data: explore, isLoading: exploreLoading } = useGetExplore();
   const { data: roomsData, isLoading: roomsLoading } = useGetRooms({ tab: "POPULAR", pageNum: 1, pageSize: 4 });
+
+  const [showInject, setShowInject] = useState(false);
+  const [injectFields, setInjectFields] = useState({ ticket: "", access_token: "", uid: "" });
+  const [injectState, setInjectState] = useState<"idle"|"loading"|"ok"|"err">("idle");
+  const [injectMsg, setInjectMsg] = useState("");
+
+  const sessionExpired = !sessionLoading && session?.ticket_expired;
+
+  async function handleInject(e: React.FormEvent) {
+    e.preventDefault();
+    setInjectState("loading");
+    setInjectMsg("");
+    try {
+      const res = await fetch("/api/ditto/session/inject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(injectFields),
+      });
+      const data = await res.json() as { ok: boolean; uid?: string; ticket_prefix?: string; error?: string };
+      if (data.ok) {
+        setInjectState("ok");
+        setInjectMsg(`Session saved — UID: ${data.uid}, ticket: ${data.ticket_prefix}`);
+        setInjectFields({ ticket: "", access_token: "", uid: "" });
+        setShowInject(false);
+        queryClient.invalidateQueries();
+      } else {
+        setInjectState("err");
+        setInjectMsg(data.error ?? "Failed");
+      }
+    } catch (err) {
+      setInjectState("err");
+      setInjectMsg(err instanceof Error ? err.message : "Network error");
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -20,6 +57,69 @@ export default function Home() {
         </h1>
         <p className="text-muted-foreground mt-2 font-mono text-sm">System diagnostic and live telemetry.</p>
       </header>
+
+      {/* ── Session expired banner ── */}
+      {sessionExpired && !showInject && (
+        <div className="border border-destructive/60 bg-destructive/10 p-4 flex items-start gap-3 font-mono">
+          <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-destructive font-bold text-sm uppercase tracking-wider">SESSION EXPIRED</p>
+            <p className="text-muted-foreground text-xs mt-1">
+              Ticket is invalid — likely due to logout from the app. Inject a fresh session captured from a new login flow.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowInject(true)}
+            className="shrink-0 text-xs border border-primary/50 text-primary px-3 py-1.5 uppercase tracking-widest font-bold hover:bg-primary/10 transition-colors"
+          >
+            INJECT SESSION
+          </button>
+        </div>
+      )}
+
+      {/* ── Session injection form ── */}
+      {showInject && (
+        <div className="border border-primary/40 bg-card p-4 font-mono space-y-4">
+          <div className="flex items-center justify-between border-b border-border pb-3">
+            <p className="text-primary font-bold text-sm uppercase tracking-widest flex items-center gap-2">
+              <RefreshCw className="w-4 h-4" /> Inject New Session
+            </p>
+            <button onClick={() => { setShowInject(false); setInjectState("idle"); }} className="text-muted-foreground hover:text-foreground text-xs uppercase tracking-wider">CANCEL</button>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Capture a new flow from the Ditto app after re-login and run:<br />
+            <code className="text-primary">node re-work/ditto_api.js extract-session &lt;flow_file&gt;</code><br />
+            Or paste credentials below directly.
+          </p>
+          <form onSubmit={handleInject} className="space-y-3">
+            {(["uid", "access_token", "ticket"] as const).map((field) => (
+              <div key={field} className="space-y-1">
+                <label className="text-xs text-muted-foreground uppercase tracking-wider">{field.replace("_", " ")}</label>
+                <input
+                  type="text"
+                  value={injectFields[field]}
+                  onChange={e => setInjectFields(p => ({ ...p, [field]: e.target.value }))}
+                  placeholder={field === "uid" ? "281306" : field === "access_token" ? "32-char hex token" : "32-char hex ticket"}
+                  className="w-full bg-background border border-border px-3 py-2 text-xs font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60"
+                  required
+                />
+              </div>
+            ))}
+            {injectMsg && (
+              <p className={`text-xs font-bold ${injectState === "ok" ? "text-primary" : "text-destructive"}`}>
+                {injectState === "ok" ? "✅ " : "⚠ "}{injectMsg}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={injectState === "loading"}
+              className="w-full border border-primary text-primary py-2 text-xs font-bold uppercase tracking-widest hover:bg-primary/10 transition-colors disabled:opacity-50"
+            >
+              {injectState === "loading" ? "SAVING..." : "SAVE SESSION"}
+            </button>
+          </form>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="bg-card border-primary/30 rounded-none shadow-[0_0_15px_rgba(0,240,255,0.1)]">
@@ -50,9 +150,16 @@ export default function Home() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground text-xs uppercase tracking-wider">STATUS</span>
-                  <Badge variant={session.ticket_expired ? "destructive" : "default"} className="rounded-none font-bold uppercase tracking-widest">
-                    {session.ticket_expired ? "EXPIRED" : "VALID"}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={session.ticket_expired ? "destructive" : "default"} className="rounded-none font-bold uppercase tracking-widest">
+                      {session.ticket_expired ? "EXPIRED" : "VALID"}
+                    </Badge>
+                    {session.ticket_expired && (
+                      <button onClick={() => setShowInject(true)} className="text-[10px] text-primary underline uppercase tracking-wider">
+                        fix
+                      </button>
+                    )}
+                  </div>
                 </div>
               </>
             ) : (
