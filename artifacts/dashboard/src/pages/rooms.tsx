@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useGetRooms, getGetRoomsQueryKey, Room, useGetTrtcToken } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LayoutGrid, Users, Radio, User, Zap, Copy, Check, Loader2, X, Headphones, Volume2, VolumeX, Mic, MicOff } from "lucide-react";
+import { LayoutGrid, Users, Radio, User, Zap, Copy, Check, Loader2, X, Headphones, Volume2, VolumeX, Mic, MicOff, Search, XCircle } from "lucide-react";
 import AgoraRTC, { IAgoraRTCClient, IRemoteAudioTrack, IMicrophoneAudioTrack } from "agora-rtc-sdk-ng";
 
 const TABS = ["POPULAR", "EG", "SA", "AE"];
@@ -31,6 +31,49 @@ export default function Rooms() {
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
   const [isMuted,   setIsMuted]   = useState(false);
   const [isMicMuted, setIsMicMuted] = useState(false);
+
+  // ── Search state ────────────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [searchResults, setSearchResults] = useState<Room[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError]   = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const isSearchMode = searchQuery.length > 0;
+
+  async function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const q = searchInput.trim();
+    if (!q) return;
+    setSearchQuery(q);
+    setSearchLoading(true);
+    setSearchError(null);
+    setSearchResults(null);
+    try {
+      const res = await fetch(`/api/ditto/rooms/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json() as { ok: boolean; rooms: Room[]; error?: unknown };
+      if (data.ok) {
+        setSearchResults(data.rooms);
+      } else {
+        setSearchError("لم يتم العثور على نتائج");
+        setSearchResults([]);
+      }
+    } catch {
+      setSearchError("Network error");
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+  function clearSearch() {
+    setSearchQuery("");
+    setSearchInput("");
+    setSearchResults(null);
+    setSearchError(null);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }
 
   const { data: roomList, isLoading } = useGetRooms(
     { tab: activeTab, pageNum: 1, pageSize: 30 },
@@ -84,32 +127,86 @@ export default function Rooms() {
 
   return (
     <div className="space-y-6 font-mono h-full flex flex-col">
-      <header className="border-b border-border pb-4 flex flex-col md:flex-row md:items-end justify-between gap-4 shrink-0">
-        <div>
-          <h1 className="text-3xl font-bold text-primary tracking-widest uppercase flex items-center gap-3">
-            <LayoutGrid className="w-8 h-8" />
-            Network Nodes
-          </h1>
-          <p className="text-muted-foreground mt-2 text-sm">
-            {roomList?.total != null ? `${roomList.total} active broadcasts` : "Monitor active broadcast channels."}
-          </p>
+      <header className="border-b border-border pb-4 shrink-0 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-primary tracking-widest uppercase flex items-center gap-3">
+              <LayoutGrid className="w-8 h-8" />
+              Network Nodes
+            </h1>
+            <p className="text-muted-foreground mt-2 text-sm">
+              {isSearchMode
+                ? searchLoading
+                  ? "Searching..."
+                  : searchResults != null
+                  ? `${searchResults.length} result(s) for "${searchQuery}"`
+                  : "Search rooms by ID or name"
+                : roomList?.total != null
+                ? `${roomList.total} active broadcasts`
+                : "Monitor active broadcast channels."}
+            </p>
+          </div>
+
+          {/* Tabs — hidden in search mode */}
+          {!isSearchMode && (
+            <div className="flex gap-0 border border-border w-fit">
+              {TABS.map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-5 py-2 text-xs font-bold tracking-widest uppercase transition-colors ${
+                    activeTab === tab
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        <div className="flex gap-0 border border-border w-fit">
-          {TABS.map((tab) => (
+        {/* Search bar */}
+        <form onSubmit={handleSearch} className="flex gap-0">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              placeholder="ابحث بالـ ID أو الاسم أو الـ keyword..."
+              className="w-full bg-background border border-border border-r-0 pl-9 pr-9 py-2 text-xs font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/60 h-9"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => { setSearchInput(""); if (!isSearchMode) inputRef.current?.focus(); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <XCircle className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={!searchInput.trim() || searchLoading}
+            className="border border-border border-r bg-primary/10 text-primary hover:bg-primary/20 px-4 h-9 text-xs font-bold tracking-widest uppercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+          >
+            {searchLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+            بحث
+          </button>
+          {isSearchMode && (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-5 py-2 text-xs font-bold tracking-widest uppercase transition-colors ${
-                activeTab === tab
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-background text-muted-foreground hover:text-foreground"
-              }`}
+              type="button"
+              onClick={clearSearch}
+              className="border border-border bg-background text-muted-foreground hover:text-foreground px-3 h-9 text-xs font-bold tracking-widest uppercase transition-colors flex items-center gap-1"
             >
-              {tab}
+              <X className="w-3 h-3" /> مسح
             </button>
-          ))}
-        </div>
+          )}
+        </form>
       </header>
 
       {/* ── Active session bar ── */}
@@ -172,13 +269,95 @@ export default function Rooms() {
       )}
 
       <div className="flex-1 overflow-auto pb-8">
-        {isLoading ? (
+        {/* Search error */}
+        {isSearchMode && searchError && (
+          <div className="border border-destructive/40 bg-destructive/5 p-4 text-destructive text-xs font-bold font-mono mb-4">
+            ⚠ {searchError}
+          </div>
+        )}
+
+        {/* Search loading skeleton */}
+        {isSearchMode && searchLoading && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-72 w-full bg-muted rounded-none" />
+            ))}
+          </div>
+        )}
+
+        {/* Search results */}
+        {isSearchMode && !searchLoading && searchResults != null && (
+          searchResults.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+              {searchResults.map((room: Room, idx: number) => (
+                <RoomCard
+                  key={room.roomId ?? idx}
+                  room={room}
+                  isActiveRoom={activeSession?.roomId === String(room.roomId)}
+                  isTalking={activeSession?.isTalking ?? false}
+                  onListen={async (token) => {
+                    await stopSession();
+                    const roomIdStr = String(room.roomId);
+                    const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
+                    await client.setClientRole("audience");
+                    const tracks: IRemoteAudioTrack[] = [];
+                    client.on("user-published", async (user, mediaType) => {
+                      if (mediaType === "audio") {
+                        const track = await client.subscribe(user, mediaType);
+                        tracks.push(track);
+                        track.play();
+                        setActiveSession(prev => prev ? { ...prev, audioTracks: [...prev.audioTracks, track] } : prev);
+                      }
+                    });
+                    await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
+                    setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks: tracks, muted: false, localTrack: null, isTalking: false, micMuted: false });
+                  }}
+                  onTalk={async (token) => {
+                    await stopSession();
+                    const roomIdStr = String(room.roomId);
+                    const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
+                    await client.setClientRole("host");
+                    const tracks: IRemoteAudioTrack[] = [];
+                    client.on("user-published", async (user, mediaType) => {
+                      if (mediaType === "audio") {
+                        const track = await client.subscribe(user, mediaType);
+                        tracks.push(track);
+                        track.play();
+                        setActiveSession(prev => prev ? { ...prev, audioTracks: [...prev.audioTracks, track] } : prev);
+                      }
+                    });
+                    const localTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "music_standard", AEC: true, ANS: true, AGC: true });
+                    await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
+                    await client.publish([localTrack]);
+                    setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks: tracks, muted: false, localTrack, isTalking: true, micMuted: false });
+                    setIsMicMuted(false);
+                  }}
+                  onStop={stopSession}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center border border-dashed border-border p-16 text-center text-muted-foreground mt-8">
+              <div>
+                <Search className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                <p className="font-bold tracking-widest uppercase">NO_RESULTS</p>
+                <p className="text-sm mt-2 opacity-60">لا توجد رومات بهذا البحث.</p>
+              </div>
+            </div>
+          )
+        )}
+
+        {/* Normal browse loading skeleton */}
+        {!isSearchMode && isLoading && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
             {Array.from({ length: 12 }).map((_, i) => (
               <Skeleton key={i} className="h-72 w-full bg-muted rounded-none" />
             ))}
           </div>
-        ) : roomList?.rooms && roomList.rooms.length > 0 ? (
+        )}
+
+        {/* Normal browse — room grid */}
+        {!isSearchMode && !isLoading && roomList?.rooms && roomList.rooms.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
             {roomList.rooms.map((room: Room, idx: number) => (
               <RoomCard
@@ -186,14 +365,12 @@ export default function Rooms() {
                 room={room}
                 isActiveRoom={activeSession?.roomId === String(room.roomId)}
                 isTalking={activeSession?.isTalking ?? false}
-
                 onListen={async (token) => {
                   await stopSession();
                   const roomIdStr = String(room.roomId);
                   const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
                   await client.setClientRole("audience");
                   const tracks: IRemoteAudioTrack[] = [];
-
                   client.on("user-published", async (user, mediaType) => {
                     if (mediaType === "audio") {
                       const track = await client.subscribe(user, mediaType);
@@ -207,17 +384,14 @@ export default function Rooms() {
                       setActiveSession(prev => prev ? { ...prev, audioTracks: prev.audioTracks.filter(t => t !== t) } : prev);
                     }
                   });
-
                   await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
                   setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks: tracks, muted: false, localTrack: null, isTalking: false, micMuted: false });
                 }}
-
                 onTalk={async (token) => {
                   await stopSession();
                   const roomIdStr = String(room.roomId);
                   const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
                   await client.setClientRole("host");
-
                   const tracks: IRemoteAudioTrack[] = [];
                   client.on("user-published", async (user, mediaType) => {
                     if (mediaType === "audio") {
@@ -227,26 +401,20 @@ export default function Rooms() {
                       setActiveSession(prev => prev ? { ...prev, audioTracks: [...prev.audioTracks, track] } : prev);
                     }
                   });
-
-                  const localTrack = await AgoraRTC.createMicrophoneAudioTrack({
-                    encoderConfig: "music_standard",
-                    AEC: true,
-                    ANS: true,
-                    AGC: true,
-                  });
-
+                  const localTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "music_standard", AEC: true, ANS: true, AGC: true });
                   await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
                   await client.publish([localTrack]);
-
                   setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks: tracks, muted: false, localTrack, isTalking: true, micMuted: false });
                   setIsMicMuted(false);
                 }}
-
                 onStop={stopSession}
               />
             ))}
           </div>
-        ) : (
+        )}
+
+        {/* Normal browse — empty state */}
+        {!isSearchMode && !isLoading && (!roomList?.rooms || roomList.rooms.length === 0) && (
           <div className="flex items-center justify-center border border-dashed border-border p-16 text-center text-muted-foreground mt-8">
             <div>
               <LayoutGrid className="w-12 h-12 mx-auto mb-4 opacity-20" />

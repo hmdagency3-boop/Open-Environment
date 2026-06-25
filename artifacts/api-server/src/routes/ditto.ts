@@ -440,6 +440,27 @@ router.post("/trtc-token", async (req, res) => {
   }
 });
 
+// ── GET /api/ditto/rooms/search ───────────────────────────────────────────────
+// Search rooms by keyword (room name, ID, or owner nickname).
+router.get("/rooms/search", async (req, res) => {
+  const q = (req.query.q as string ?? "").trim();
+  if (!q) {
+    res.status(400).json({ ok: false, rooms: [], error: "q required" }); return;
+  }
+  try {
+    const result = await dittoCall("/search/room", { keyword: q, pageNum: "1", pageSize: "30" }) as Record<string, unknown>;
+    if (result?.code === 200) {
+      const data  = result.data as Record<string, unknown>;
+      const list  = (data?.list ?? data?.listRoom ?? data?.rooms ?? []) as Record<string, unknown>[];
+      res.json({ ok: true, rooms: list.map(parseRoom), total: list.length });
+    } else {
+      res.json({ ok: false, rooms: [], error: result });
+    }
+  } catch (e) {
+    res.status(500).json({ ok: false, rooms: [], error: String(e) });
+  }
+});
+
 // ── GET /api/ditto/rooms ──────────────────────────────────────────────────────
 router.get("/rooms", async (req, res) => {
   const tab      = (req.query.tab as string)      ?? "POPULAR";
