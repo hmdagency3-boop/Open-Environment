@@ -17,7 +17,7 @@ const fs     = require('fs');
 const path   = require('path');
 
 // ─── الإعدادات ────────────────────────────────────────────────────────────────
-const REPLIT_HOST  = 'e5976c2d-0bf9-4181-b9bf-f08d16db065b-00-3umk66t73idr8.kirk.replit.dev';
+const REPLIT_HOST  = 'f12de453-ad04-4d80-a5a2-d681c2fb1700-00-156sgqnpzc4v6.picard.replit.dev';
 const WEBHOOK_SECRET = '9c95c0ea01ffdd3362d3b282ffb40cc54dea258b230f066a';
 const SESSION_FILE = path.join(__dirname, 'ditto_session.json');
 const POLL_MS      = 3000;
