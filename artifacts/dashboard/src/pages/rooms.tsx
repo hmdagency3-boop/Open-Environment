@@ -88,12 +88,17 @@ function RoomCard({ room }: { room: Room }) {
           </Badge>
         </div>
 
-        {/* Country flag */}
-        {room.countryIcon && (
-          <div className="absolute top-2 left-2 z-10">
+        {/* Country flag + VIP badge stacked top-left */}
+        <div className="absolute top-2 left-2 z-10 flex flex-col gap-1 items-start">
+          {room.countryIcon && (
             <img src={room.countryIcon} alt={room.countryCode ?? ""} className="w-5 h-4 object-cover border border-white/20" />
-          </div>
-        )}
+          )}
+          {room.vipName && (
+            <span className="bg-yellow-400 text-black text-[9px] font-black px-1.5 py-0.5 leading-none tracking-wide">
+              {room.vipName}
+            </span>
+          )}
+        </div>
 
         {hasCover ? (
           <img
