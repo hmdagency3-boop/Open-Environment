@@ -246,6 +246,53 @@ async function apiCall(method, endpoint, params = null, { silent = false } = {})
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Worker job queue (calls via Windows machine = Egyptian IP)
+// ─────────────────────────────────────────────────────────────────────────────
+const JOB_SERVER = 'http://localhost:8080';
+const JOB_SECRET = process.env.WEBHOOK_SECRET || '9c95c0ea01ffdd3362d3b282ffb40cc54dea258b230f066a';
+
+function jobHttp(method, urlPath, body = null) {
+  return new Promise((resolve, reject) => {
+    const isPost = method === 'POST';
+    const bodyBuf = body ? Buffer.from(JSON.stringify(body)) : null;
+    const opts = {
+      hostname: 'localhost',
+      port:     8080,
+      path:     urlPath,
+      method,
+      headers: {
+        'x-webhook-secret': JOB_SECRET,
+        ...(isPost ? { 'content-type': 'application/json', 'content-length': bodyBuf.length.toString() } : {}),
+      },
+    };
+    const req = http.request(opts, res => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))));
+    });
+    req.setTimeout(28000, () => req.destroy(new Error('Timeout')));
+    req.on('error', reject);
+    if (bodyBuf) req.write(bodyBuf);
+    req.end();
+  });
+}
+
+async function callViaWorker(endpoint, params, method) {
+  // Create job
+  const { jobId, error } = await jobHttp('POST', '/api/jobs/create', { endpoint, params: { _method: method, ...params } });
+  if (error || !jobId) throw new Error('Job create failed: ' + (error || 'no jobId'));
+  console.log('  📤 Job sent to worker:', jobId);
+
+  // Long-poll for result (up to 60s, two 25s polls)
+  for (let i = 0; i < 3; i++) {
+    const r = await jobHttp('GET', `/api/jobs/result/${jobId}`);
+    if (r.done) return r.result;
+    console.log('  ⏳ Waiting for worker...');
+  }
+  throw new Error('Worker timed out — make sure ditto_worker.js is running on your PC');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Auto-refresh ticket
 // ─────────────────────────────────────────────────────────────────────────────
 async function refreshTicket(session) {
@@ -617,20 +664,24 @@ async function main() {
       if (k) params[k] = rest.join('=');
     });
 
-    const info = ENDPOINTS[endpoint];
+    const info   = ENDPOINTS[endpoint];
     const method = info ? info.method : 'GET';
+    const needsWorker = info && info.desc.startsWith('⚡');
 
-    if (info && info.desc.startsWith('⚡')) {
-      const proxySet = !!loadSession()._proxy;
-      if (proxySet) {
-        console.log('🌍 هذا الـ endpoint هيشتغل عبر proxy (IP مصري) ✅');
-      } else {
-        console.log('⚠️  هذا الـ endpoint يرجع 10003 من Replit بسبب CDN geo-routing');
-        console.log('   💡 الحل: شغّل local_proxy.js على جهازك ونفّذ: node ditto_api.js setup-proxy <IP_بتاعك>');
+    let result;
+    if (needsWorker) {
+      console.log('🌍 هذا الـ endpoint محتاج IP مصري — بيبعته للـ worker على جهازك...');
+      try {
+        result = await callViaWorker(endpoint, params, method);
+      } catch (e) {
+        console.error('❌ Worker error:', e.message);
+        console.error('   💡 تأكد إن ditto_worker.js شغّال على جهازك');
+        return;
       }
+    } else {
+      result = await apiCall(method, endpoint, params);
     }
 
-    const result = await apiCall(method, endpoint, params);
     if (result) {
       console.log('\n✅ Response:');
       console.log(JSON.stringify(result, null, 2));
