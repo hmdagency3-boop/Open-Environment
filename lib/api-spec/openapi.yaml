@@ -1,22 +1,22 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Ditto Dashboard API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: ditto
+    description: Ditto user & room data
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +24,109 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /ditto/session:
+    get:
+      operationId: getSession
+      tags: [ditto]
+      summary: Get current session status
+      responses:
+        "200":
+          description: Session info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionStatus"
+
+  /ditto/balance:
+    get:
+      operationId: getBalance
+      tags: [ditto]
+      summary: Get own account balance
+      responses:
+        "200":
+          description: Balance data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Balance"
+
+  /ditto/user/{uid}:
+    get:
+      operationId: getUserByUid
+      tags: [ditto]
+      summary: Lookup user by UID (gifts + profile via worker)
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserLookup"
+        "404":
+          description: User not found
+
+  /ditto/rooms:
+    get:
+      operationId: getRooms
+      tags: [ditto]
+      summary: Get live rooms list
+      parameters:
+        - name: tab
+          in: query
+          schema:
+            type: string
+            default: POPULAR
+        - name: pageNum
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Rooms list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomList"
+
+  /ditto/explore:
+    get:
+      operationId: getExplore
+      tags: [ditto]
+      summary: Get explore/featured content
+      responses:
+        "200":
+          description: Explore page data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExploreResult"
+
+  /ditto/worker/status:
+    get:
+      operationId: getWorkerStatus
+      tags: [ditto]
+      summary: Check if Egyptian worker is connected
+      responses:
+        "200":
+          description: Worker status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerStatus"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +137,127 @@ components:
       required:
         - status
 
+    SessionStatus:
+      type: object
+      properties:
+        uid:
+          type: ["string", "null"]
+        ticket_prefix:
+          type: ["string", "null"]
+        ticket_age_min:
+          type: ["integer", "null"]
+        ticket_valid_for_min:
+          type: ["integer", "null"]
+        ticket_expired:
+          type: boolean
+      required:
+        - ticket_expired
+
+    Balance:
+      type: object
+      properties:
+        goldNum:
+          type: number
+        diamondNum:
+          type: number
+        coin:
+          type: integer
+        uid:
+          type: integer
+        ok:
+          type: boolean
+      required:
+        - ok
+
+    GiftEntry:
+      type: object
+      properties:
+        giftId:
+          type: integer
+        giftName:
+          type: string
+        num:
+          type: ["integer", "null"]
+      required:
+        - giftId
+        - giftName
+
+    UserLookup:
+      type: object
+      properties:
+        uid:
+          type: string
+        totalGiftsNum:
+          type: ["integer", "null"]
+        totalGiftTypes:
+          type: ["integer", "null"]
+        topGifts:
+          type: array
+          items:
+            $ref: "#/components/schemas/GiftEntry"
+        profile:
+          type: ["object", "null"]
+          additionalProperties: true
+        workerUsed:
+          type: boolean
+        source:
+          type: string
+      required:
+        - uid
+        - topGifts
+        - workerUsed
+        - source
+
+    Room:
+      type: object
+      properties:
+        roomId:
+          type: ["string", "null"]
+        roomName:
+          type: ["string", "null"]
+        cover:
+          type: ["string", "null"]
+        onlineNum:
+          type: ["integer", "null"]
+        uid:
+          type: ["string", "null"]
+      required: []
+
+    RoomList:
+      type: object
+      properties:
+        rooms:
+          type: array
+          items:
+            $ref: "#/components/schemas/Room"
+        total:
+          type: ["integer", "null"]
+        ok:
+          type: boolean
+      required:
+        - rooms
+        - ok
+
+    ExploreResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        raw:
+          type: object
+          additionalProperties: true
+      required:
+        - ok
+
+    WorkerStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        pendingJobs:
+          type: integer
+        lastPollAgo:
+          type: ["integer", "null"]
+      required:
+        - connected
+        - pendingJobs
