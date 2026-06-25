@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useGetRooms, getGetRoomsQueryKey, Room, useGetTrtcToken } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LayoutGrid, Users, Radio, User, Zap, Copy, Check, Loader2, X, Headphones, MicOff, Volume2, VolumeX } from "lucide-react";
-import AgoraRTC, { IAgoraRTCClient, IRemoteAudioTrack } from "agora-rtc-sdk-ng";
+import { LayoutGrid, Users, Radio, User, Zap, Copy, Check, Loader2, X, Headphones, Volume2, VolumeX, Mic, MicOff } from "lucide-react";
+import AgoraRTC, { IAgoraRTCClient, IRemoteAudioTrack, IMicrophoneAudioTrack } from "agora-rtc-sdk-ng";
 
 const TABS = ["POPULAR", "EG", "SA", "AE"];
 const AGORA_APP_ID = "1b77c926d478406cae3174ce0565db4b";
@@ -13,33 +13,43 @@ const SESSION_UID = 281306;
 AgoraRTC.setLogLevel(4);
 
 type ListenState = "idle" | "fetching" | "connecting" | "listening" | "error";
+type TalkState   = "idle" | "fetching" | "connecting" | "talking"   | "error";
 
 interface ActiveSession {
-  roomId: string;
-  roomName: string;
-  client: IAgoraRTCClient;
+  roomId:      string;
+  roomName:    string;
+  client:      IAgoraRTCClient;
   audioTracks: IRemoteAudioTrack[];
-  muted: boolean;
+  muted:       boolean;
+  localTrack:  IMicrophoneAudioTrack | null;
+  isTalking:   boolean;
+  micMuted:    boolean;
 }
 
 export default function Rooms() {
   const [activeTab, setActiveTab] = useState(TABS[0]);
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted,   setIsMuted]   = useState(false);
+  const [isMicMuted, setIsMicMuted] = useState(false);
 
   const { data: roomList, isLoading } = useGetRooms(
     { tab: activeTab, pageNum: 1, pageSize: 30 },
     { query: { queryKey: getGetRoomsQueryKey({ tab: activeTab, pageNum: 1, pageSize: 30 }) } }
   );
 
-  const stopListening = useCallback(async () => {
+  const stopSession = useCallback(async () => {
     if (!activeSession) return;
     try {
       activeSession.audioTracks.forEach(t => t.stop());
+      if (activeSession.localTrack) {
+        activeSession.localTrack.stop();
+        activeSession.localTrack.close();
+      }
       await activeSession.client.leave();
     } catch (_) {}
     setActiveSession(null);
     setIsMuted(false);
+    setIsMicMuted(false);
   }, [activeSession]);
 
   const toggleMute = useCallback(() => {
@@ -52,10 +62,21 @@ export default function Rooms() {
     setIsMuted(newMuted);
   }, [activeSession, isMuted]);
 
+  const toggleMic = useCallback(async () => {
+    if (!activeSession?.localTrack) return;
+    const newMicMuted = !isMicMuted;
+    await activeSession.localTrack.setMuted(newMicMuted);
+    setIsMicMuted(newMicMuted);
+  }, [activeSession, isMicMuted]);
+
   useEffect(() => {
     return () => {
       if (activeSession) {
         activeSession.audioTracks.forEach(t => t.stop());
+        if (activeSession.localTrack) {
+          activeSession.localTrack.stop();
+          activeSession.localTrack.close();
+        }
         activeSession.client.leave().catch(() => {});
       }
     };
@@ -91,15 +112,21 @@ export default function Rooms() {
         </div>
       </header>
 
-      {/* Active session bar */}
+      {/* ── Active session bar ── */}
       {activeSession && (
-        <div className="shrink-0 border border-primary/60 bg-primary/5 px-4 py-3 flex items-center justify-between gap-4">
+        <div className={`shrink-0 border px-4 py-3 flex items-center justify-between gap-4 ${
+          activeSession.isTalking
+            ? "border-green-500/60 bg-green-500/5"
+            : "border-primary/60 bg-primary/5"
+        }`}>
           <div className="flex items-center gap-3">
             <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${activeSession.isTalking ? "bg-green-400" : "bg-primary"}`}></span>
+              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${activeSession.isTalking ? "bg-green-400" : "bg-primary"}`}></span>
             </span>
-            <span className="text-xs text-primary font-bold tracking-widest uppercase">INTERCEPTING</span>
+            <span className={`text-xs font-bold tracking-widest uppercase ${activeSession.isTalking ? "text-green-400" : "text-primary"}`}>
+              {activeSession.isTalking ? "BROADCASTING" : "INTERCEPTING"}
+            </span>
             <span className="text-xs text-muted-foreground">
               Channel <span className="text-foreground font-bold">{activeSession.roomId}</span>
               {activeSession.roomName && (
@@ -108,6 +135,21 @@ export default function Rooms() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {/* Mic toggle — only when talking */}
+            {activeSession.isTalking && (
+              <button
+                onClick={toggleMic}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold tracking-widest border transition-colors ${
+                  isMicMuted
+                    ? "border-destructive/50 text-destructive hover:bg-destructive/10"
+                    : "border-green-500/50 text-green-400 hover:bg-green-500/10"
+                }`}
+              >
+                {isMicMuted ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
+                {isMicMuted ? "MIC_OFF" : "MIC_ON"}
+              </button>
+            )}
+            {/* Speaker toggle */}
             <button
               onClick={toggleMute}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold tracking-widest border transition-colors ${
@@ -120,7 +162,7 @@ export default function Rooms() {
               {isMuted ? "MUTED" : "LIVE"}
             </button>
             <button
-              onClick={stopListening}
+              onClick={stopSession}
               className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold tracking-widest border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors"
             >
               <X className="w-3 h-3" /> DISCONNECT
@@ -143,12 +185,13 @@ export default function Rooms() {
                 key={room.roomId ?? idx}
                 room={room}
                 isActiveRoom={activeSession?.roomId === String(room.roomId)}
+                isTalking={activeSession?.isTalking ?? false}
+
                 onListen={async (token) => {
-                  await stopListening();
+                  await stopSession();
                   const roomIdStr = String(room.roomId);
                   const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
                   await client.setClientRole("audience");
-
                   const tracks: IRemoteAudioTrack[] = [];
 
                   client.on("user-published", async (user, mediaType) => {
@@ -159,24 +202,47 @@ export default function Rooms() {
                       setActiveSession(prev => prev ? { ...prev, audioTracks: [...prev.audioTracks, track] } : prev);
                     }
                   });
-
-                  client.on("user-unpublished", (user, mediaType) => {
+                  client.on("user-unpublished", (_user, mediaType) => {
                     if (mediaType === "audio") {
                       setActiveSession(prev => prev ? { ...prev, audioTracks: prev.audioTracks.filter(t => t !== t) } : prev);
                     }
                   });
 
                   await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
-
-                  setActiveSession({
-                    roomId: roomIdStr,
-                    roomName: room.nick ?? room.roomName ?? "",
-                    client,
-                    audioTracks: tracks,
-                    muted: false,
-                  });
+                  setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks: tracks, muted: false, localTrack: null, isTalking: false, micMuted: false });
                 }}
-                onStop={stopListening}
+
+                onTalk={async (token) => {
+                  await stopSession();
+                  const roomIdStr = String(room.roomId);
+                  const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
+                  await client.setClientRole("host");
+
+                  const tracks: IRemoteAudioTrack[] = [];
+                  client.on("user-published", async (user, mediaType) => {
+                    if (mediaType === "audio") {
+                      const track = await client.subscribe(user, mediaType);
+                      tracks.push(track);
+                      track.play();
+                      setActiveSession(prev => prev ? { ...prev, audioTracks: [...prev.audioTracks, track] } : prev);
+                    }
+                  });
+
+                  const localTrack = await AgoraRTC.createMicrophoneAudioTrack({
+                    encoderConfig: "music_standard",
+                    AEC: true,
+                    ANS: true,
+                    AGC: true,
+                  });
+
+                  await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
+                  await client.publish([localTrack]);
+
+                  setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks: tracks, muted: false, localTrack, isTalking: true, micMuted: false });
+                  setIsMicMuted(false);
+                }}
+
+                onStop={stopSession}
               />
             ))}
           </div>
@@ -194,20 +260,24 @@ export default function Rooms() {
   );
 }
 
-// ── Room card ─────────────────────────────────────────────────────────────────
+// ── Room card ──────────────────────────────────────────────────────────────────
 interface RoomCardProps {
-  room: Room;
+  room:        Room;
   isActiveRoom: boolean;
-  onListen: (token: string) => Promise<void>;
-  onStop: () => Promise<void>;
+  isTalking:   boolean;
+  onListen:    (token: string) => Promise<void>;
+  onTalk:      (token: string) => Promise<void>;
+  onStop:      () => Promise<void>;
 }
 
-function RoomCard({ room, isActiveRoom, onListen, onStop }: RoomCardProps) {
+function RoomCard({ room, isActiveRoom, isTalking, onListen, onTalk, onStop }: RoomCardProps) {
   const hasCover = !!room.cover;
-  const [showToken, setShowToken] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [showToken,   setShowToken]   = useState(false);
+  const [copied,      setCopied]      = useState(false);
   const [listenState, setListenState] = useState<ListenState>("idle");
   const [listenError, setListenError] = useState<string | null>(null);
+  const [talkState,   setTalkState]   = useState<TalkState>("idle");
+  const [talkError,   setTalkError]   = useState<string | null>(null);
 
   const { mutate: fetchToken, mutateAsync: fetchTokenAsync, data: tokenData, isPending, reset } = useGetTrtcToken();
 
@@ -243,21 +313,15 @@ function RoomCard({ room, isActiveRoom, onListen, onStop }: RoomCardProps) {
     if (isActiveRoom) {
       await onStop();
       setListenState("idle");
+      setTalkState("idle");
       return;
     }
 
     setListenState("fetching");
     setListenError(null);
-
     try {
       const data = await fetchTokenAsync({ data: { roomId, type: "1", channel: "1" } });
-      if (!data?.ok || !data.token) {
-        throw new Error(
-          typeof (data as Record<string, unknown>)?.error === "string"
-            ? String((data as Record<string, unknown>).error)
-            : "Token fetch failed — room may be closed"
-        );
-      }
+      if (!data?.ok || !data.token) throw new Error(typeof (data as Record<string, unknown>)?.error === "string" ? String((data as Record<string, unknown>).error) : "Token fetch failed");
       setListenState("connecting");
       await onListen(data.token);
       setListenState("listening");
@@ -268,36 +332,67 @@ function RoomCard({ room, isActiveRoom, onListen, onStop }: RoomCardProps) {
     }
   }
 
-  useEffect(() => {
-    if (!isActiveRoom && listenState === "listening") {
+  async function handleTalk(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!roomId) return;
+
+    if (isActiveRoom && isTalking) {
+      await onStop();
+      setTalkState("idle");
       setListenState("idle");
+      return;
+    }
+
+    setTalkState("fetching");
+    setTalkError(null);
+    try {
+      const data = await fetchTokenAsync({ data: { roomId, type: "0", channel: "1" } });
+      if (!data?.ok || !data.token) throw new Error(typeof (data as Record<string, unknown>)?.error === "string" ? String((data as Record<string, unknown>).error) : "Token fetch failed");
+      setTalkState("connecting");
+      await onTalk(data.token);
+      setTalkState("talking");
+    } catch (err) {
+      setTalkState("error");
+      setTalkError(err instanceof Error ? err.message : "Mic access or connection failed");
+      setTimeout(() => { setTalkState("idle"); setTalkError(null); }, 5000);
+    }
+  }
+
+  useEffect(() => {
+    if (!isActiveRoom) {
+      setListenState("idle");
+      setTalkState("idle");
     }
   }, [isActiveRoom]);
 
-  const listenLabel = isActiveRoom
+  const listenLabel = isActiveRoom && !isTalking
     ? "LIVE"
-    : listenState === "fetching"
-    ? "TOKEN..."
-    : listenState === "connecting"
-    ? "JOINING..."
-    : listenState === "error"
-    ? "ERROR"
+    : listenState === "fetching"   ? "TOKEN..."
+    : listenState === "connecting" ? "JOINING..."
+    : listenState === "error"      ? "ERROR"
     : "INTERCEPT";
+
+  const talkLabel = isActiveRoom && isTalking
+    ? "ON_AIR"
+    : talkState === "fetching"   ? "TOKEN..."
+    : talkState === "connecting" ? "JOINING..."
+    : talkState === "error"      ? "ERROR"
+    : "TALK";
 
   return (
     <Card className={`bg-card rounded-none overflow-hidden group transition-colors relative flex flex-col ${
-      isActiveRoom ? "border-primary" : "border-border hover:border-primary/50"
+      isActiveRoom
+        ? isTalking ? "border-green-500" : "border-primary"
+        : "border-border hover:border-primary/50"
     }`}>
       {/* Cover image */}
       <div className="relative w-full aspect-[4/3] bg-muted flex items-center justify-center overflow-hidden shrink-0">
-        {/* LIVE badge */}
         <div className="absolute top-2 right-2 z-10">
           <Badge className="bg-black/80 text-secondary border border-secondary/50 rounded-none font-bold gap-1 text-[10px]">
             <Radio className="w-2.5 h-2.5 animate-pulse" /> LIVE
           </Badge>
         </div>
 
-        {/* Country flag + VIP badge stacked top-left */}
         <div className="absolute top-2 left-2 z-10 flex flex-col gap-1 items-start">
           {room.countryIcon && (
             <img src={room.countryIcon} alt={room.countryCode ?? ""} className="w-5 h-4 object-cover border border-white/20" />
@@ -322,20 +417,20 @@ function RoomCard({ room, isActiveRoom, onListen, onStop }: RoomCardProps) {
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent pointer-events-none" />
 
-        {/* Viewers badge */}
         <div className="absolute bottom-2 right-2 flex items-center gap-1 text-xs font-bold text-accent">
           <Users className="w-3 h-3" />
           {room.onlineNum?.toLocaleString() ?? 0}
         </div>
 
-        {/* Bottom-left: INTERCEPT button + TRTC button */}
         {roomId && (
-          <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1.5">
+          <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1">
+            {/* INTERCEPT (listen) button */}
             <button
               onClick={handleListen}
-              disabled={listenState === "fetching" || listenState === "connecting"}
+              disabled={listenState === "fetching" || listenState === "connecting" || talkState === "fetching" || talkState === "connecting"}
+              title="Listen only"
               className={`flex items-center gap-1 border text-[10px] font-bold tracking-widest uppercase px-2 py-1 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
-                isActiveRoom
+                isActiveRoom && !isTalking
                   ? "bg-primary/20 border-primary text-primary"
                   : listenState === "error"
                   ? "bg-destructive/20 border-destructive text-destructive"
@@ -344,7 +439,7 @@ function RoomCard({ room, isActiveRoom, onListen, onStop }: RoomCardProps) {
             >
               {(listenState === "fetching" || listenState === "connecting") ? (
                 <Loader2 className="w-2.5 h-2.5 animate-spin" />
-              ) : isActiveRoom ? (
+              ) : isActiveRoom && !isTalking ? (
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
@@ -355,6 +450,33 @@ function RoomCard({ room, isActiveRoom, onListen, onStop }: RoomCardProps) {
               {listenLabel}
             </button>
 
+            {/* TALK (broadcast) button */}
+            <button
+              onClick={handleTalk}
+              disabled={listenState === "fetching" || listenState === "connecting" || talkState === "fetching" || talkState === "connecting"}
+              title="Join as speaker"
+              className={`flex items-center gap-1 border text-[10px] font-bold tracking-widest uppercase px-2 py-1 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                isActiveRoom && isTalking
+                  ? "bg-green-500/20 border-green-500 text-green-400"
+                  : talkState === "error"
+                  ? "bg-destructive/20 border-destructive text-destructive"
+                  : "bg-black/70 border-green-500/40 text-green-400 hover:bg-green-500/20 hover:border-green-500"
+              }`}
+            >
+              {(talkState === "fetching" || talkState === "connecting") ? (
+                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+              ) : isActiveRoom && isTalking ? (
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-400"></span>
+                </span>
+              ) : (
+                <Mic className="w-2.5 h-2.5" />
+              )}
+              {talkLabel}
+            </button>
+
+            {/* TRTC token button */}
             <button
               onClick={handleGetToken}
               className="flex items-center gap-1 bg-black/70 border border-border/50 text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors px-2 py-1 text-[10px] font-bold tracking-widest uppercase"
@@ -395,9 +517,11 @@ function RoomCard({ room, isActiveRoom, onListen, onStop }: RoomCardProps) {
             )}
           </div>
 
-          {/* Error message */}
           {listenState === "error" && listenError && (
             <p className="text-[10px] text-destructive mt-1 font-bold">⚠ {listenError}</p>
+          )}
+          {talkState === "error" && talkError && (
+            <p className="text-[10px] text-destructive mt-1 font-bold">⚠ {talkError}</p>
           )}
         </div>
       </div>
