@@ -209,7 +209,7 @@ function RoomCard({ room, isActiveRoom, onListen, onStop }: RoomCardProps) {
   const [listenState, setListenState] = useState<ListenState>("idle");
   const [listenError, setListenError] = useState<string | null>(null);
 
-  const { mutate: fetchToken, data: tokenData, isPending, reset } = useGetTrtcToken();
+  const { mutate: fetchToken, mutateAsync: fetchTokenAsync, data: tokenData, isPending, reset } = useGetTrtcToken();
 
   const roomId = room.roomId != null ? String(room.roomId) : null;
 
@@ -250,28 +250,17 @@ function RoomCard({ room, isActiveRoom, onListen, onStop }: RoomCardProps) {
     setListenError(null);
 
     try {
-      await new Promise<void>((resolve, reject) => {
-        fetchToken(
-          { data: { roomId, type: "1", channel: "1" } },
-          {
-            onSuccess: async (data: { ok?: boolean; token?: string | null } | undefined) => {
-              if (!data?.ok || !data.token) {
-                reject(new Error("Token fetch failed"));
-                return;
-              }
-              setListenState("connecting");
-              try {
-                await onListen(data.token);
-                setListenState("listening");
-                resolve();
-              } catch (err) {
-                reject(err);
-              }
-            },
-            onError: (err: unknown) => reject(err instanceof Error ? err : new Error(String(err))),
-          }
+      const data = await fetchTokenAsync({ data: { roomId, type: "1", channel: "1" } });
+      if (!data?.ok || !data.token) {
+        throw new Error(
+          typeof (data as Record<string, unknown>)?.error === "string"
+            ? String((data as Record<string, unknown>).error)
+            : "Token fetch failed — room may be closed"
         );
-      });
+      }
+      setListenState("connecting");
+      await onListen(data.token);
+      setListenState("listening");
     } catch (err) {
       setListenState("error");
       setListenError(err instanceof Error ? err.message : "Connection failed");
