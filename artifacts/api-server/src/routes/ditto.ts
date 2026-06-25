@@ -5,7 +5,7 @@ import { Router } from "express";
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 import { request as httpsRequest } from "https";
 import { gunzipSync } from "zlib";
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 
 const router = Router();
@@ -184,6 +184,47 @@ router.get("/session", (_req, res) => {
     });
   } catch {
     res.json({ uid: null, ticket_prefix: null, ticket_age_min: null, ticket_valid_for_min: null, ticket_expired: true });
+  }
+});
+
+// ── PATCH /api/ditto/session/ticket ──────────────────────────────────────────
+// Inject only a fresh ticket (worker push / Frida hook) — keeps existing access_token/uid
+router.patch("/session/ticket", (req, res) => {
+  const { ticket } = req.body ?? {};
+  if (!ticket || typeof ticket !== "string" || !/^[0-9a-f]{24,64}$/i.test(ticket)) {
+    res.status(400).json({ ok: false, error: "invalid ticket format" }); return;
+  }
+  try {
+    const session = JSON.parse(readFileSync(SESSION_FILE, "utf8")) as Record<string, unknown>;
+    session.ticket = ticket;
+    session.ticket_saved_at = Date.now();
+    writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2));
+    res.json({ ok: true, ticket_prefix: ticket.slice(0, 8) + "..." });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// ── POST /api/ditto/session/inject ───────────────────────────────────────────
+// Inject a full new session after re-login (ticket + access_token + uid required)
+router.post("/session/inject", (req, res) => {
+  const { ticket, access_token, uid } = req.body ?? {};
+  if (!ticket || typeof ticket !== "string") { res.status(400).json({ ok: false, error: "ticket required" }); return; }
+  if (!access_token || typeof access_token !== "string") { res.status(400).json({ ok: false, error: "access_token required" }); return; }
+  if (!uid) { res.status(400).json({ ok: false, error: "uid required" }); return; }
+  try {
+    let session: Record<string, unknown> = {};
+    try { session = JSON.parse(readFileSync(SESSION_FILE, "utf8")); } catch { /* new file */ }
+    const now = Date.now();
+    session.ticket = ticket;
+    session.access_token = access_token;
+    session.uid = String(uid);
+    session.ticket_saved_at = now;
+    session.access_token_saved_at = now;
+    writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2));
+    res.json({ ok: true, uid: session.uid, ticket_prefix: ticket.slice(0, 8) + "..." });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e) });
   }
 });
 
