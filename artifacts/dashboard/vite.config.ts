@@ -64,7 +64,10 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
     fs: {
-      strict: true,
+      strict: false,
+    },
+    headers: {
+      "Cache-Control": "no-store",
     },
     proxy: {
       "/api": {
