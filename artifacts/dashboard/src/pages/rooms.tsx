@@ -808,6 +808,12 @@ export default function Rooms() {
                       setAgoraPublisherUids(prev => prev.filter(id => id !== (user.uid as number)));
                     });
                     await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
+                    // Catch users already publishing before we joined
+                    for (const u of client.remoteUsers) {
+                      setAgoraPublisherUids(prev => [...new Set([...prev, u.uid as number])]);
+                      if (u.hasAudio) { try { const t = await client.subscribe(u, "audio"); audioTracks.push(t); t.play(); } catch (_) {} }
+                      if (u.hasVideo) { try { const t = await client.subscribe(u, "video") as IRemoteVideoTrack; videoTracks.push(t); } catch (_) {} }
+                    }
                     setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks, videoTracks, muted: false, localTrack: null, isTalking: false, micMuted: false });
                   }}
                   onTalk={async (token) => {
@@ -835,6 +841,12 @@ export default function Rooms() {
                     });
                     const localTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "music_standard", AEC: true, ANS: true, AGC: true });
                     await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
+                    // Catch users already publishing before we joined
+                    for (const u of client.remoteUsers) {
+                      setAgoraPublisherUids(prev => [...new Set([...prev, u.uid as number])]);
+                      if (u.hasAudio) { try { const t = await client.subscribe(u, "audio"); audioTracks.push(t); t.play(); } catch (_) {} }
+                      if (u.hasVideo) { try { const t = await client.subscribe(u, "video") as IRemoteVideoTrack; videoTracks.push(t); } catch (_) {} }
+                    }
                     await client.publish([localTrack]);
                     setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks, videoTracks, muted: false, localTrack, isTalking: true, micMuted: false });
                     setIsMicMuted(false);
@@ -900,6 +912,12 @@ export default function Rooms() {
                     setAgoraPublisherUids(prev => prev.filter(id => id !== (user.uid as number)));
                   });
                   await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
+                  // Catch users already publishing before we joined
+                  for (const u of client.remoteUsers) {
+                    setAgoraPublisherUids(prev => [...new Set([...prev, u.uid as number])]);
+                    if (u.hasAudio) { try { const t = await client.subscribe(u, "audio"); audioTracks.push(t); t.play(); } catch (_) {} }
+                    if (u.hasVideo) { try { const t = await client.subscribe(u, "video") as IRemoteVideoTrack; videoTracks.push(t); } catch (_) {} }
+                  }
                   setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks, videoTracks, muted: false, localTrack: null, isTalking: false, micMuted: false });
                 }}
                 onTalk={async (token) => {
@@ -927,6 +945,12 @@ export default function Rooms() {
                   });
                   const localTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "music_standard", AEC: true, ANS: true, AGC: true });
                   await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
+                  // Catch users already publishing before we joined
+                  for (const u of client.remoteUsers) {
+                    setAgoraPublisherUids(prev => [...new Set([...prev, u.uid as number])]);
+                    if (u.hasAudio) { try { const t = await client.subscribe(u, "audio"); audioTracks.push(t); t.play(); } catch (_) {} }
+                    if (u.hasVideo) { try { const t = await client.subscribe(u, "video") as IRemoteVideoTrack; videoTracks.push(t); } catch (_) {} }
+                  }
                   await client.publish([localTrack]);
                   setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks, videoTracks, muted: false, localTrack, isTalking: true, micMuted: false });
                   setIsMicMuted(false);
