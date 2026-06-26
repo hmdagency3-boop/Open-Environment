@@ -61,25 +61,28 @@ export default function Rooms() {
   const [videoOpen,       setVideoOpen]       = useState(false);
   const videoContainerRef = useRef<HTMLDivElement>(null);
 
-  // Play video tracks into container div whenever they change
-  useEffect(() => {
-    const tracks = activeSession?.videoTracks ?? [];
-    if (!videoContainerRef.current || tracks.length === 0) return;
-    const container = videoContainerRef.current;
-    container.innerHTML = "";
-    tracks.forEach(track => {
-      const el = document.createElement("div");
-      el.style.cssText = "width:100%;height:100%;position:absolute;inset:0;";
-      container.appendChild(el);
-      track.play(el);
-    });
-    return () => { tracks.forEach(t => { try { t.stop(); } catch {} }); };
-  }, [activeSession?.videoTracks]);
-
   // Auto-open video panel when a video track arrives
   useEffect(() => {
     if ((activeSession?.videoTracks.length ?? 0) > 0) setVideoOpen(true);
   }, [activeSession?.videoTracks.length]);
+
+  // Play video tracks into container div — fires when tracks change OR panel opens
+  useEffect(() => {
+    if (!videoOpen) return;
+    const tracks = activeSession?.videoTracks ?? [];
+    const container = videoContainerRef.current;
+    if (!container) return;
+    container.innerHTML = "";
+    tracks.forEach(track => {
+      const el = document.createElement("div");
+      el.style.width = "100%";
+      el.style.height = "100%";
+      el.style.position = "absolute";
+      el.style.inset = "0";
+      container.appendChild(el);
+      try { track.play(el); } catch (e) { console.error("[VIDEO] play error", e); }
+    });
+  }, [activeSession?.videoTracks, videoOpen]);
 
   // ── Chat state ───────────────────────────────────────────────────────────────
   const [chatOpen,     setChatOpen]     = useState(false);
@@ -681,16 +684,17 @@ export default function Rooms() {
               </div>
             </div>
             <div className="flex-1 relative bg-black">
-              {activeSession.videoTracks.length === 0 ? (
-                <div className="absolute inset-0 flex items-center justify-center text-center">
+              {/* Container always mounted so ref is available when tracks arrive */}
+              <div ref={videoContainerRef} className="absolute inset-0" />
+              {/* Empty state overlay — shown on top when no tracks */}
+              {activeSession.videoTracks.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center text-center pointer-events-none">
                   <div>
                     <VideoOff className="w-8 h-8 mx-auto mb-2 text-muted-foreground/30" />
                     <p className="text-[9px] uppercase tracking-widest text-muted-foreground/50">No video stream</p>
                     <p className="text-[8px] text-muted-foreground/30 mt-1">Host may not be broadcasting video</p>
                   </div>
                 </div>
-              ) : (
-                <div ref={videoContainerRef} className="absolute inset-0" />
               )}
             </div>
           </div>

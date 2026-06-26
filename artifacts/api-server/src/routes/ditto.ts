@@ -522,7 +522,7 @@ router.post("/trtc-token", async (req, res) => {
     ) as Record<string, unknown>;
     if (result?.code === 200) {
       const data = result.data as Record<string, unknown>;
-      res.json({ ok: true, token: data?.token ?? null, privateMapKey: data?.privateMapKey ?? "", channel: data?.channel ?? null });
+      res.json({ ok: true, ...data });
     } else {
       res.json({ ok: false, error: result });
     }
