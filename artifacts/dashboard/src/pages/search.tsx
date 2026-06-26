@@ -9,9 +9,52 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { SearchIcon, User, Package, Hash, Users, Star, AlertTriangle, Radio } from "lucide-react";
+import {
+  SearchIcon, User, Package, Hash, Users, Star,
+  AlertTriangle, Radio, Car, Shield, Award, Zap,
+} from "lucide-react";
 
 type SearchMode = "uid" | "name";
+
+// Extended profile type to include v5 fields
+interface ExtendedProfile {
+  ok?: boolean;
+  uid?: string;
+  nickname?: string | null;
+  avatar?: string | null;
+  signature?: string | null;
+  erbanNo?: number | null;
+  fansNum?: number | null;
+  followNum?: number | null;
+  level?: number | null;
+  diamond?: number | null;
+  online?: boolean | null;
+  countryCode?: string | null;
+  countryName?: string | null;
+  countryIcon?: string | null;
+  vipLevel?: number | null;
+  vipName?: string | null;
+  vipIcon?: string | null;
+  vipMedal?: string | null;
+  vipInfoDto?: Record<string, unknown> | null;
+  gender?: number | null;
+  age?: number | null;
+  growthLevel?: number | null;
+  experLevel?: number | null;
+  experLevelPic?: string | null;
+  charmLevel?: number | null;
+  charmLevelPic?: string | null;
+  carName?: string | null;
+  carUrl?: string | null;
+  carVideoUrl?: string | null;
+  userMedalList?: Array<{ id: number; url: string; name: string; expiration?: number }>;
+  userRoles?: number[];
+  userWearPropList?: unknown[];
+  source?: string;
+  workerUsed?: boolean;
+  workerNeeded?: boolean;
+  raw?: unknown;
+}
 
 export default function Search() {
   const [input, setInput] = useState("");
@@ -25,10 +68,11 @@ export default function Search() {
     { query: { enabled: !!activeUid && mode === "uid", queryKey: getGetUserByUidQueryKey(activeUid ?? "") } }
   );
 
-  const { data: profile, isLoading: profileLoading, isFetching: profileFetching } = useGetUserProfile(
+  const { data: profileRaw, isLoading: profileLoading, isFetching: profileFetching } = useGetUserProfile(
     activeUid ?? "",
     { query: { enabled: !!activeUid && mode === "uid", queryKey: getGetUserProfileQueryKey(activeUid ?? "") } }
   );
+  const profile = profileRaw as ExtendedProfile | undefined;
 
   const { data: searchResult, isLoading: searchLoading, isFetching: searchFetching } = useSearchUsers(
     { q: activeQuery ?? "" },
@@ -54,14 +98,20 @@ export default function Search() {
 
   const loading = giftsLoading || giftsFetching || profileLoading || profileFetching || searchLoading || searchFetching;
 
-  // ── Source badge text ──────────────────────────────────────────────────────
-  const sourceBadge = profile?.source === "live_room"
-    ? { label: "LIVE_ROOM", cls: "bg-red-500/20 text-red-400 border-red-500/30" }
+  // ── Source badge ──────────────────────────────────────────────────────────
+  const sourceBadge = profile?.source?.startsWith("public_api")
+    ? { label: "PUBLIC_API_V5", cls: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" }
+    : profile?.source === "live_room"
+    ? { label: "LIVE_ROOM",    cls: "bg-red-500/20 text-red-400 border-red-500/30" }
     : profile?.workerUsed
-    ? { label: "WORKER",    cls: "bg-green-500/20 text-green-400 border-green-500/30" }
+    ? { label: "WORKER",       cls: "bg-green-500/20 text-green-400 border-green-500/30" }
     : profile?.ok
-    ? { label: "DIRECT",    cls: "bg-primary/20 text-primary border-primary/30" }
+    ? { label: "DIRECT",       cls: "bg-primary/20 text-primary border-primary/30" }
     : null;
+
+  const hasLevels = profile?.experLevel != null || profile?.charmLevel != null || profile?.growthLevel != null;
+  const hasCar    = !!(profile?.carName || profile?.carUrl);
+  const medals    = profile?.userMedalList ?? [];
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto font-mono">
@@ -71,7 +121,7 @@ export default function Search() {
           Profile Intel
         </h1>
         <p className="text-muted-foreground mt-2 text-sm">
-          Search by UID for gift history and live profile data.
+          Search by UID for full profile data via public API v5.
         </p>
       </header>
 
@@ -111,7 +161,7 @@ export default function Search() {
         </CardContent>
       </Card>
 
-      {/* Worker needed notice (only for name search with no worker) */}
+      {/* Worker needed notice */}
       {!loading && searchResult && !searchResult.ok && searchResult.workerNeeded && (
         <div className="flex items-center gap-3 border border-yellow-500/40 bg-yellow-500/5 px-4 py-3 text-yellow-400 text-sm">
           <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -132,7 +182,7 @@ export default function Search() {
         </Card>
       )}
 
-      {/* ── NAME SEARCH RESULTS ─────────────────────────────────────────── */}
+      {/* ── NAME SEARCH RESULTS ───────────────────────────────────────────── */}
       {!loading && searchResult && searchResult.ok && mode === "name" && (
         <Card className="bg-card rounded-none border-border animate-in fade-in slide-in-from-bottom-4 duration-300">
           <CardHeader className="border-b border-border pb-3 bg-muted/10 flex flex-row items-center justify-between">
@@ -172,17 +222,17 @@ export default function Search() {
         </Card>
       )}
 
-      {/* ── UID PROFILE RESULTS ─────────────────────────────────────────── */}
+      {/* ── UID PROFILE RESULTS ───────────────────────────────────────────── */}
       {!loading && activeUid && mode === "uid" && (gifts || profile) && (
         <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-300">
 
-          {/* Profile card */}
+          {/* ── Main profile card ─────────────────────────────────────────── */}
           <Card className="bg-card rounded-none border-primary/30">
             <CardHeader className="border-b border-border pb-3 bg-muted/10 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-mono flex items-center gap-2 uppercase tracking-wider">
                 <User className="w-4 h-4 text-primary" /> Profile
               </CardTitle>
-              <div className="flex gap-2 items-center">
+              <div className="flex gap-2 items-center flex-wrap justify-end">
                 {profile?.online === true && (
                   <Badge className="rounded-none font-bold bg-red-500/20 text-red-400 border border-red-500/30 gap-1 text-[10px]">
                     <Radio className="w-2.5 h-2.5 animate-pulse" /> LIVE
@@ -202,9 +252,9 @@ export default function Search() {
             </CardHeader>
             <CardContent className="pt-5">
               <div className="flex gap-5 items-start">
-                {/* Avatar + country */}
+                {/* Avatar + VIP icon */}
                 <div className="shrink-0 flex flex-col items-center gap-2">
-                  <div className="w-20 h-20 border border-border/60 overflow-hidden bg-muted flex items-center justify-center">
+                  <div className="w-20 h-20 border border-border/60 overflow-hidden bg-muted flex items-center justify-center relative">
                     {profile?.avatar ? (
                       <img src={profile.avatar} alt="" className="w-full h-full object-cover"
                         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -212,21 +262,37 @@ export default function Search() {
                       <User className="w-8 h-8 text-muted-foreground/40" />
                     )}
                   </div>
+                  {/* Country flag */}
                   {profile?.countryIcon && (
                     <img src={profile.countryIcon} alt={profile.countryCode ?? ""} className="w-7 h-5 object-cover border border-border/40" />
+                  )}
+                  {/* VIP icon */}
+                  {profile?.vipIcon && (
+                    <img src={profile.vipIcon} alt={profile.vipName ?? "VIP"} className="h-6 object-contain"
+                      title={profile.vipName ?? "VIP"}
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                  )}
+                  {/* Gender badge */}
+                  {profile?.gender != null && (
+                    <span className={`text-[10px] font-bold px-2 py-0.5 border ${
+                      profile.gender === 1 ? "border-blue-500/40 text-blue-400 bg-blue-500/10"
+                                           : "border-pink-500/40 text-pink-400 bg-pink-500/10"
+                    }`}>
+                      {profile.gender === 1 ? "MALE" : "FEMALE"}
+                    </span>
                   )}
                 </div>
 
                 {/* Info grid */}
                 <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-2.5">
-                  <InfoCell label="UID"       value={gifts?.uid ?? activeUid} color="text-primary" />
+                  <InfoCell label="UID"       value={gifts?.uid ?? activeUid}  color="text-primary" />
                   <InfoCell label="NICKNAME"  value={profile?.nickname} />
                   <InfoCell label="ERBAN_NO"  value={profile?.erbanNo != null ? String(profile.erbanNo) : undefined} />
-                  <InfoCell label="FANS"      value={profile?.fansNum?.toLocaleString()} color="text-secondary" />
-                  <InfoCell label="FOLLOWING" value={profile?.followNum?.toLocaleString()} />
                   <InfoCell label="COUNTRY"   value={profile?.countryName ?? profile?.countryCode} />
-                  <InfoCell label="VIP"       value={profile?.vipName}   color="text-yellow-400" />
-                  <InfoCell label="LEVEL"     value={profile?.level != null ? `Lv ${profile.level}` : undefined} color="text-accent" />
+                  <InfoCell label="AGE"       value={profile?.age != null ? `${profile.age} yrs` : undefined} />
+                  <InfoCell label="VIP"       value={profile?.vipName || (profile?.vipLevel ? `Level ${profile.vipLevel}` : undefined)} color="text-yellow-400" />
+                  <InfoCell label="FANS"      value={profile?.fansNum?.toLocaleString()}  color="text-secondary" />
+                  <InfoCell label="FOLLOWING" value={profile?.followNum?.toLocaleString()} />
                   <InfoCell label="DIAMOND"   value={profile?.diamond != null ? String(profile.diamond) : undefined} color="text-yellow-300" />
                   {profile?.signature && (
                     <InfoCell label="SIGNATURE" value={profile.signature} wide />
@@ -234,11 +300,10 @@ export default function Search() {
                 </div>
               </div>
 
-              {/* Source note */}
+              {/* Hints */}
               {profile?.source === "live_room" && (
                 <div className="mt-4 text-xs text-muted-foreground border-t border-border/30 pt-3">
                   Profile extracted from live room — user is currently broadcasting.
-                  Fans / following / diamond data requires worker.
                 </div>
               )}
               {profile?.workerNeeded && !profile?.ok && (
@@ -249,14 +314,169 @@ export default function Search() {
             </CardContent>
           </Card>
 
-          {/* Gift stats */}
+          {/* ── Levels card ───────────────────────────────────────────────── */}
+          {hasLevels && (
+            <Card className="bg-card rounded-none border-accent/30">
+              <CardHeader className="border-b border-border pb-3 bg-accent/5">
+                <CardTitle className="text-sm font-mono text-accent flex items-center gap-2 uppercase tracking-wider">
+                  <Zap className="w-4 h-4" /> Levels
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="grid grid-cols-3 gap-4">
+                  {/* Experience level */}
+                  <div className="border border-border/40 px-3 py-3 bg-background/40 flex flex-col items-center gap-2">
+                    {profile?.experLevelPic && (
+                      <img src={profile.experLevelPic} alt="exp" className="h-8 object-contain"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    )}
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Experience</div>
+                    <div className="text-xl font-bold text-accent">
+                      {profile?.experLevel != null ? `Lv ${profile.experLevel}` : "—"}
+                    </div>
+                  </div>
+                  {/* Charm level */}
+                  <div className="border border-border/40 px-3 py-3 bg-background/40 flex flex-col items-center gap-2">
+                    {profile?.charmLevelPic && (
+                      <img src={profile.charmLevelPic} alt="charm" className="h-8 object-contain"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    )}
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Charm</div>
+                    <div className="text-xl font-bold text-pink-400">
+                      {profile?.charmLevel != null ? `Lv ${profile.charmLevel}` : "—"}
+                    </div>
+                  </div>
+                  {/* Growth level */}
+                  <div className="border border-border/40 px-3 py-3 bg-background/40 flex flex-col items-center gap-2">
+                    <div className="h-8 flex items-center justify-center">
+                      <Shield className="w-6 h-6 text-green-400" />
+                    </div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Growth</div>
+                    <div className="text-xl font-bold text-green-400">
+                      {profile?.growthLevel != null ? `Lv ${profile.growthLevel}` : "—"}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Car card ──────────────────────────────────────────────────── */}
+          {hasCar && (
+            <Card className="bg-card rounded-none border-border/50">
+              <CardHeader className="border-b border-border pb-3 bg-muted/5">
+                <CardTitle className="text-sm font-mono text-muted-foreground flex items-center gap-2 uppercase tracking-wider">
+                  <Car className="w-4 h-4" /> Vehicle
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-5">
+                  {profile?.carUrl && (
+                    <div className="w-24 h-16 border border-border/40 overflow-hidden bg-muted shrink-0">
+                      <img src={profile.carUrl} alt={profile.carName ?? "car"} className="w-full h-full object-cover"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    </div>
+                  )}
+                  <div>
+                    <div className="font-bold text-base">{profile?.carName ?? "—"}</div>
+                    {profile?.carVideoUrl && (
+                      <a href={profile.carVideoUrl} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline mt-1 inline-block">
+                        VIEW EFFECT ↗
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Medals & Titles card ──────────────────────────────────────── */}
+          {medals.length > 0 && (
+            <Card className="bg-card rounded-none border-yellow-500/30">
+              <CardHeader className="border-b border-border pb-3 bg-yellow-500/5">
+                <CardTitle className="text-sm font-mono text-yellow-400 flex items-center gap-2 uppercase tracking-wider">
+                  <Award className="w-4 h-4" /> Medals & Titles
+                  <span className="text-muted-foreground font-normal">({medals.length})</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {medals.map((medal) => (
+                    <div key={medal.id} className="border border-border/40 bg-background/40 p-2 flex flex-col items-center gap-1.5">
+                      <div className="w-full h-10 flex items-center justify-center">
+                        <img src={medal.url} alt={medal.name} className="max-h-10 object-contain"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      </div>
+                      <div className="text-[10px] text-center text-muted-foreground leading-tight line-clamp-2">
+                        {medal.name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── VIP details card ──────────────────────────────────────────── */}
+          {profile?.vipInfoDto && (profile.vipInfoDto as Record<string,unknown>).vipId != null &&
+           Number((profile.vipInfoDto as Record<string,unknown>).vipId) > 0 && (
+            <Card className="bg-card rounded-none border-yellow-400/40">
+              <CardHeader className="border-b border-border pb-3 bg-yellow-400/5">
+                <CardTitle className="text-sm font-mono text-yellow-400 flex items-center gap-2 uppercase tracking-wider">
+                  <Star className="w-4 h-4" /> VIP Details
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                {(() => {
+                  const vip = profile.vipInfoDto as Record<string, unknown>;
+                  const perks = [
+                    { key: "hasEntranceEffect", label: "Entrance Effect" },
+                    { key: "hasVipGift",        label: "VIP Gift"        },
+                    { key: "hasVipSeat",        label: "VIP Seat"        },
+                    { key: "hasAntiKick",       label: "Anti Kick"       },
+                    { key: "hasAntiMute",       label: "Anti Mute"       },
+                  ];
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-4">
+                        {vip.vipIcon && (
+                          <img src={vip.vipIcon as string} alt={vip.vipName as string} className="h-8 object-contain"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        )}
+                        <div>
+                          <div className="font-bold text-yellow-400 uppercase">{String(vip.vipName || "—")}</div>
+                          <div className="text-xs text-muted-foreground">
+                            Level {String(vip.vipId)} · {vip.vipDate != null ? `${vip.vipDate} days active` : ""}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {perks.map(p => (
+                          <span key={p.key} className={`text-[10px] font-bold px-2 py-1 border ${
+                            vip[p.key]
+                              ? "border-yellow-500/40 text-yellow-400 bg-yellow-500/10"
+                              : "border-border/30 text-muted-foreground/40 bg-background/20"
+                          }`}>
+                            {vip[p.key] ? "✓" : "✗"} {p.label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Gift stats ────────────────────────────────────────────────── */}
           <div className="grid grid-cols-3 gap-4">
             <StatCard label="TOTAL GIFTS"  value={gifts?.totalGiftsNum?.toLocaleString() ?? "—"} color="text-secondary" />
             <StatCard label="GIFT TYPES"   value={gifts?.totalGiftTypes?.toLocaleString() ?? "—"} color="text-accent" />
-            <StatCard label="DATA SOURCE"  value={gifts?.source?.toUpperCase() ?? "—"} color="text-muted-foreground" />
+            <StatCard label="DATA SOURCE"  value={profile?.source?.toUpperCase() ?? gifts?.source?.toUpperCase() ?? "—"} color="text-muted-foreground" />
           </div>
 
-          {/* Top gifts */}
+          {/* ── Top gifts ─────────────────────────────────────────────────── */}
           {gifts && gifts.topGifts.length > 0 && (
             <Card className="bg-card rounded-none border-secondary/30">
               <CardHeader className="border-b border-border pb-3 bg-secondary/5">
@@ -299,7 +519,7 @@ export default function Search() {
             </div>
           )}
 
-          {/* Raw dump (worker/api only) */}
+          {/* Raw dump */}
           {profile?.ok && profile.raw && profile.source === "api" && (
             <Card className="bg-card rounded-none border-border/30">
               <CardHeader className="border-b border-border/30 pb-2 bg-muted/5">
