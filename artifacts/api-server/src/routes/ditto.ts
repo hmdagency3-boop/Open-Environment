@@ -92,6 +92,56 @@ async function dittoCall(endpoint: string, params: Record<string, string>, metho
   return json;
 }
 
+// ── Public profile API (no auth, no geo-lock) ─────────────────────────────────
+// https://www.sayyouditto.com/user/v4/get?uid=<uid>
+interface PublicProfile {
+  nick: string | null;
+  avatar: string | null;
+  erbanNo: number | null;
+  gender: number | null;
+  onLine: boolean;
+}
+
+async function fetchPublicProfile(uid: string | number): Promise<PublicProfile | null> {
+  try {
+    const raw = await new Promise<string>((resolve, reject) => {
+      const req = httpsRequest(
+        {
+          hostname: "www.sayyouditto.com", port: 443,
+          path: `/user/v4/get?uid=${uid}`, method: "GET",
+          headers: { "user-agent": "okhttp/4.12.0", "accept-encoding": "gzip" },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (c: Buffer) => chunks.push(c));
+          res.on("end", () => {
+            let buf = Buffer.concat(chunks);
+            if (res.headers["content-encoding"] === "gzip") {
+              try { buf = gunzipSync(buf); } catch { /* not gzip */ }
+            }
+            resolve(buf.toString("utf8"));
+          });
+        },
+      );
+      req.on("error", reject);
+      req.setTimeout(8000, () => { req.destroy(new Error("Timeout")); });
+      req.end();
+    });
+    const json = JSON.parse(raw) as Record<string, unknown>;
+    if (json.code !== 200 || !json.data) return null;
+    const d = json.data as Record<string, unknown>;
+    return {
+      nick:    (d.nick   as string)  || null,
+      avatar:  (d.avatar as string)  || null,
+      erbanNo: (d.erbanNo as number) || null,
+      gender:  d.gender  != null ? (d.gender as number) : null,
+      onLine:  !!(d.onLine),
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ── Room data parser ──────────────────────────────────────────────────────────
 function parseRoom(r: Record<string, unknown>) {
   const country = r.countryInfo as Record<string, unknown> | null;
@@ -298,21 +348,39 @@ router.get("/room-members/:roomId", async (req, res) => {
     }
     const data = result.data as Record<string, unknown>;
     const raw = (data?.vipMemberList as Record<string, unknown>[]) ?? [];
+
+    // Build initial member list
     const members = raw.map(m => ({
-      uid:         m.uid,
-      nick:        m.nick ?? "",
-      avatar:      m.avatar ?? null,
-      gender:      m.gender ?? null,
-      isManager:   m.is_manager ?? false,
-      isCreator:   m.is_creator ?? false,
-      onMic:       m.onMic ?? false,
-      inRoom:      m.inRoomStatus ?? false,
-      growthLevel: m.growthLevel ?? 0,
-      charmLevel:  m.charmLevel ?? 0,
-      carName:     m.car_name ?? null,
-      noLv:        m.noLv ?? 0,
-      erbanNo:     m.erban_no ?? null,
+      uid:         m.uid as number,
+      nick:        (m.nick as string) ?? "",
+      avatar:      (m.avatar as string) ?? null,
+      gender:      (m.gender as number) ?? null,
+      isManager:   (m.is_manager as boolean) ?? false,
+      isCreator:   (m.is_creator as boolean) ?? false,
+      onMic:       (m.onMic as boolean) ?? false,
+      inRoom:      (m.inRoomStatus as boolean) ?? false,
+      growthLevel: (m.growthLevel as number) ?? 0,
+      charmLevel:  (m.charmLevel as number) ?? 0,
+      carName:     (m.car_name as string) ?? null,
+      noLv:        (m.noLv as number) ?? 0,
+      erbanNo:     (m.erban_no as number) ?? null,
     }));
+
+    // Enrich members missing nick/avatar via public API (parallel, no geo-lock)
+    const needsEnrich = members.filter(m => !m.nick || !m.avatar || !m.erbanNo);
+    if (needsEnrich.length > 0) {
+      await Promise.allSettled(
+        needsEnrich.map(async (member) => {
+          const pub = await fetchPublicProfile(member.uid);
+          if (!pub) return;
+          if (!member.nick   && pub.nick)    member.nick    = pub.nick;
+          if (!member.avatar && pub.avatar)  member.avatar  = pub.avatar;
+          if (!member.erbanNo && pub.erbanNo) member.erbanNo = pub.erbanNo;
+          if (member.gender == null && pub.gender != null) member.gender = pub.gender;
+        })
+      );
+    }
+
     res.json({ ok: true, members, total: members.length });
   } catch (e) {
     res.status(500).json({ ok: false, members: [], error: String(e) });
@@ -362,7 +430,8 @@ router.get("/user/:uid", async (req, res) => {
 });
 
 // ── GET /api/ditto/user/:uid/profile ─────────────────────────────────────────
-// Strategy: 1) scan live rooms (no worker, no geo-lock)
+// Strategy: 0) public API v4 (no auth, no geo-lock — fastest)
+//           1) scan live rooms (no worker, no geo-lock)
 //           2) try direct API call (may fail if geo-locked / expired ticket)
 //           3) queue worker job as last resort
 router.get("/user/:uid/profile", async (req, res) => {
@@ -371,6 +440,35 @@ router.get("/user/:uid/profile", async (req, res) => {
     res.status(400).json({ ok: false, uid, workerUsed: false, workerNeeded: false });
     return;
   }
+
+  // ── Step 0: public API v4 (always works, no ticket needed) ───────────────
+  try {
+    const pub = await fetchPublicProfile(uid);
+    if (pub && pub.nick) {
+      return res.json({
+        ok: true, uid,
+        nickname:    pub.nick,
+        avatar:      pub.avatar,
+        signature:   null,
+        erbanNo:     pub.erbanNo,
+        fansNum:     null,
+        followNum:   null,
+        level:       null,
+        diamond:     null,
+        online:      pub.onLine,
+        countryCode: null,
+        countryName: null,
+        countryIcon: null,
+        vipLevel:    null,
+        vipName:     null,
+        gender:      pub.gender,
+        source:      "public_api",
+        workerUsed:  false,
+        workerNeeded: false,
+        raw:         null,
+      });
+    }
+  } catch { /* fall through */ }
 
   // ── Step 1: scan rooms (free, always works) ──────────────────────────────
   try {
