@@ -133,11 +133,15 @@ export default function Rooms() {
 
     (async () => {
       try {
-        const credsRes = await fetch("/api/ditto/nim-credentials");
+        const [credsRes, addrRes] = await Promise.all([
+          fetch("/api/ditto/nim-credentials"),
+          fetch("/api/ditto/nim-addresses"),
+        ]);
         const creds = await credsRes.json() as {
           ok: boolean; nimAppKey: string; nimAccount: string | null;
           nimToken: string | null; hasToken: boolean;
         };
+        const addrData = await addrRes.json() as { ok: boolean; addresses: string[] };
         if (cancelled) return;
 
         if (!creds.hasToken || !creds.nimToken) {
@@ -149,13 +153,24 @@ export default function Rooms() {
         const Chatroom = (ChatroomMod as any).default ?? ChatroomMod;
         if (cancelled) return;
 
+        const chatroomAddresses = addrData.addresses ?? [];
+        console.log("[NIM] Connecting with:", {
+          appkey: creds.nimAppKey,
+          account: creds.nimAccount ?? String(SESSION_UID),
+          token: creds.nimToken?.slice(0, 8) + "...",
+          chatroomId: String(activeSession.roomId),
+          chatroomAddresses,
+        });
+
         const chatroom = Chatroom.getInstance({
-          appKey: creds.nimAppKey,
+          appkey: creds.nimAppKey,
           account: creds.nimAccount ?? String(SESSION_UID),
           token: creds.nimToken,
           chatroomId: String(activeSession.roomId),
           chatroomNick: "monitor",
-          onconnect: () => {
+          chatroomAddresses,
+          onconnect: (info: any) => {
+            console.log("[NIM] Connected:", info);
             if (!cancelled) setChatStatus("connected");
           },
           onmsgs: (msgs: any[]) => {
@@ -212,16 +227,19 @@ export default function Rooms() {
               }
             }
           },
-          ondisconnect: () => {
+          ondisconnect: (err: any) => {
+            console.log("[NIM] Disconnected:", err);
             if (!cancelled) setChatStatus("idle");
           },
-          onerror: () => {
+          onerror: (err: any) => {
+            console.error("[NIM] Error:", JSON.stringify(err));
             if (!cancelled) setChatStatus("failed");
           },
         });
 
         nimChatroomRef.current = chatroom;
-      } catch {
+      } catch (e) {
+        console.error("[NIM] Exception:", e);
         if (!cancelled) setChatStatus("failed");
       }
     })();

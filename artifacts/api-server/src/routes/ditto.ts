@@ -256,6 +256,35 @@ router.get("/nim-credentials", (_req, res) => {
   }
 });
 
+// ── GET /api/ditto/nim-addresses ─────────────────────────────────────────────
+// Fetches WebSocket addresses from NIM LBS so the frontend Chatroom SDK can
+// connect. NIM SDK requires chatroomAddresses (wss:// list) to be supplied.
+router.get("/nim-addresses", async (_req, res) => {
+  try {
+    const session = JSON.parse(readFileSync(SESSION_FILE, "utf8")) as Record<string, unknown>;
+    const appkey = (session.nimAppKey as string | undefined) || "a1f28028ba4e22c11cfaffe0e37ae27b";
+    const uid = (session.uid as string | undefined) ?? "";
+
+    const url = `https://lbs.netease.im/lbs/chatroom.id?appkey=${encodeURIComponent(appkey)}&nrtcg=&uid=${encodeURIComponent(uid)}`;
+    const lbsData = await new Promise<string>((resolve, reject) => {
+      const https = require("https") as typeof import("https");
+      https.get(url, (r) => {
+        const chunks: Buffer[] = [];
+        r.on("data", (c: Buffer) => chunks.push(c));
+        r.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+        r.on("error", reject);
+      }).on("error", reject);
+    });
+
+    const lbs = JSON.parse(lbsData) as Record<string, unknown>;
+    // NIM LBS returns { link: ["wss://..."] }
+    const addresses: string[] = Array.isArray(lbs.link) ? (lbs.link as string[]) : [];
+    res.json({ ok: true, addresses, raw: lbs });
+  } catch (e) {
+    res.json({ ok: false, addresses: [], error: String(e) });
+  }
+});
+
 // ── GET /api/ditto/room-members/:roomId ──────────────────────────────────────
 router.get("/room-members/:roomId", async (req, res) => {
   const { roomId } = req.params;
