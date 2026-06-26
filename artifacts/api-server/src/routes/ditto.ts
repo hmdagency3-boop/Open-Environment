@@ -93,13 +93,31 @@ async function dittoCall(endpoint: string, params: Record<string, string>, metho
 }
 
 // ── Public profile API (no auth, no geo-lock) ─────────────────────────────────
-// https://www.sayyouditto.com/user/v4/get?uid=<uid>
+// /user/v5/get returns rich data: levels, car, medals, VIP, country — no ticket needed
 interface PublicProfile {
   nick: string | null;
   avatar: string | null;
   erbanNo: number | null;
   gender: number | null;
   onLine: boolean;
+  age: number | null;
+  country: string | null;
+  growthLevel: number | null;
+  experLevel: number | null;
+  experLevelPic: string | null;
+  charmLevel: number | null;
+  charmLevelPic: string | null;
+  carName: string | null;
+  carUrl: string | null;
+  carVideoUrl: string | null;
+  vipId: number | null;
+  vipName: string | null;
+  vipIcon: string | null;
+  vipMedal: string | null;
+  vipInfoDto: Record<string, unknown> | null;
+  userMedalList: Record<string, unknown>[];
+  userRoles: number[];
+  userWearPropList: unknown[];
 }
 
 async function fetchPublicProfile(uid: string | number): Promise<PublicProfile | null> {
@@ -108,7 +126,7 @@ async function fetchPublicProfile(uid: string | number): Promise<PublicProfile |
       const req = httpsRequest(
         {
           hostname: "www.sayyouditto.com", port: 443,
-          path: `/user/v4/get?uid=${uid}`, method: "GET",
+          path: `/user/v5/get?uid=${uid}`, method: "GET",
           headers: { "user-agent": "okhttp/4.12.0", "accept-encoding": "gzip" },
         },
         (res) => {
@@ -130,12 +148,31 @@ async function fetchPublicProfile(uid: string | number): Promise<PublicProfile |
     const json = JSON.parse(raw) as Record<string, unknown>;
     if (json.code !== 200 || !json.data) return null;
     const d = json.data as Record<string, unknown>;
+    const vip = d.vipInfoDto as Record<string, unknown> | null;
     return {
-      nick:    (d.nick   as string)  || null,
-      avatar:  (d.avatar as string)  || null,
-      erbanNo: (d.erbanNo as number) || null,
-      gender:  d.gender  != null ? (d.gender as number) : null,
-      onLine:  !!(d.onLine),
+      nick:          (d.nick    as string)  || null,
+      avatar:        (d.avatar  as string)  || null,
+      erbanNo:       (d.erbanNo as number)  || null,
+      gender:        d.gender   != null ? (d.gender as number) : null,
+      onLine:        !!(d.onLine),
+      age:           (d.age     as number)  ?? null,
+      country:       (d.country as string)  || null,
+      growthLevel:   (d.growthLevel as number) ?? null,
+      experLevel:    (d.experLevel  as number) ?? null,
+      experLevelPic: (d.experLevelPic as string) || null,
+      charmLevel:    (d.charmLevel  as number) ?? null,
+      charmLevelPic: (d.charmLevelPic as string) || null,
+      carName:       (d.carName  as string) || null,
+      carUrl:        (d.carUrl   as string) || null,
+      carVideoUrl:   (d.carVideoUrl as string) || null,
+      vipId:         vip ? (vip.vipId  as number) ?? null : (d.vipId as number) ?? null,
+      vipName:       vip ? (vip.vipName as string) || null : (d.vipName as string) || null,
+      vipIcon:       vip ? (vip.vipIcon as string) || null : (d.vipIcon as string) || null,
+      vipMedal:      vip ? (vip.vipMedal as string) || null : (d.vipMedal as string) || null,
+      vipInfoDto:    vip ?? null,
+      userMedalList: (d.userMedalList as Record<string, unknown>[]) ?? [],
+      userRoles:     (d.userRoles     as number[])                  ?? [],
+      userWearPropList: (d.userWearPropList as unknown[])           ?? [],
     };
   } catch {
     return null;
@@ -441,31 +478,46 @@ router.get("/user/:uid/profile", async (req, res) => {
     return;
   }
 
-  // ── Step 0: public API v4 (always works, no ticket needed) ───────────────
+  // ── Step 0: public API v5 (always works, no ticket needed) ───────────────
   try {
     const pub = await fetchPublicProfile(uid);
     if (pub && pub.nick) {
       return res.json({
         ok: true, uid,
-        nickname:    pub.nick,
-        avatar:      pub.avatar,
-        signature:   null,
-        erbanNo:     pub.erbanNo,
-        fansNum:     null,
-        followNum:   null,
-        level:       null,
-        diamond:     null,
-        online:      pub.onLine,
-        countryCode: null,
-        countryName: null,
-        countryIcon: null,
-        vipLevel:    null,
-        vipName:     null,
-        gender:      pub.gender,
-        source:      "public_api",
-        workerUsed:  false,
-        workerNeeded: false,
-        raw:         null,
+        nickname:      pub.nick,
+        avatar:        pub.avatar,
+        signature:     null,
+        erbanNo:       pub.erbanNo,
+        fansNum:       null,
+        followNum:     null,
+        level:         null,
+        diamond:       null,
+        online:        pub.onLine,
+        countryCode:   pub.country,
+        countryName:   null,
+        countryIcon:   null,
+        vipLevel:      pub.vipId,
+        vipName:       pub.vipName,
+        vipIcon:       pub.vipIcon,
+        vipMedal:      pub.vipMedal,
+        vipInfoDto:    pub.vipInfoDto,
+        gender:        pub.gender,
+        age:           pub.age,
+        growthLevel:   pub.growthLevel,
+        experLevel:    pub.experLevel,
+        experLevelPic: pub.experLevelPic,
+        charmLevel:    pub.charmLevel,
+        charmLevelPic: pub.charmLevelPic,
+        carName:       pub.carName,
+        carUrl:        pub.carUrl,
+        carVideoUrl:   pub.carVideoUrl,
+        userMedalList: pub.userMedalList,
+        userRoles:     pub.userRoles,
+        userWearPropList: pub.userWearPropList,
+        source:        "public_api_v5",
+        workerUsed:    false,
+        workerNeeded:  false,
+        raw:           null,
       });
     }
   } catch { /* fall through */ }
