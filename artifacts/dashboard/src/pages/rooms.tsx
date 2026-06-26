@@ -3,8 +3,8 @@ import { useGetRooms, getGetRoomsQueryKey, Room, useGetTrtcToken } from "@worksp
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LayoutGrid, Users, Radio, User, Zap, Copy, Check, Loader2, X, Headphones, Volume2, VolumeX, Mic, MicOff, Search, XCircle, MessageSquare } from "lucide-react";
-import AgoraRTC, { IAgoraRTCClient, IRemoteAudioTrack, IMicrophoneAudioTrack } from "agora-rtc-sdk-ng";
+import { LayoutGrid, Users, Radio, User, Zap, Copy, Check, Loader2, X, Headphones, Volume2, VolumeX, Mic, MicOff, Search, XCircle, MessageSquare, Video, VideoOff } from "lucide-react";
+import AgoraRTC, { IAgoraRTCClient, IRemoteAudioTrack, IRemoteVideoTrack, IMicrophoneAudioTrack } from "agora-rtc-sdk-ng";
 
 const TABS = ["POPULAR", "EG", "SA", "AE"];
 const AGORA_APP_ID = "1b77c926d478406cae3174ce0565db4b";
@@ -20,6 +20,7 @@ interface ActiveSession {
   roomName:    string;
   client:      IAgoraRTCClient;
   audioTracks: IRemoteAudioTrack[];
+  videoTracks: IRemoteVideoTrack[];
   muted:       boolean;
   localTrack:  IMicrophoneAudioTrack | null;
   isTalking:   boolean;
@@ -55,6 +56,30 @@ export default function Rooms() {
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
   const [isMuted,   setIsMuted]   = useState(false);
   const [isMicMuted, setIsMicMuted] = useState(false);
+
+  // ── Video state ──────────────────────────────────────────────────────────────
+  const [videoOpen,       setVideoOpen]       = useState(false);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+
+  // Play video tracks into container div whenever they change
+  useEffect(() => {
+    const tracks = activeSession?.videoTracks ?? [];
+    if (!videoContainerRef.current || tracks.length === 0) return;
+    const container = videoContainerRef.current;
+    container.innerHTML = "";
+    tracks.forEach(track => {
+      const el = document.createElement("div");
+      el.style.cssText = "width:100%;height:100%;position:absolute;inset:0;";
+      container.appendChild(el);
+      track.play(el);
+    });
+    return () => { tracks.forEach(t => { try { t.stop(); } catch {} }); };
+  }, [activeSession?.videoTracks]);
+
+  // Auto-open video panel when a video track arrives
+  useEffect(() => {
+    if ((activeSession?.videoTracks.length ?? 0) > 0) setVideoOpen(true);
+  }, [activeSession?.videoTracks.length]);
 
   // ── Chat state ───────────────────────────────────────────────────────────────
   const [chatOpen,     setChatOpen]     = useState(false);
@@ -325,6 +350,7 @@ export default function Rooms() {
     if (!activeSession) return;
     try {
       activeSession.audioTracks.forEach(t => t.stop());
+      activeSession.videoTracks.forEach(t => t.stop());
       if (activeSession.localTrack) {
         activeSession.localTrack.stop();
         activeSession.localTrack.close();
@@ -334,6 +360,7 @@ export default function Rooms() {
     setActiveSession(null);
     setIsMuted(false);
     setIsMicMuted(false);
+    setVideoOpen(false);
   }, [activeSession]);
 
   const toggleMute = useCallback(() => {
@@ -499,6 +526,21 @@ export default function Rooms() {
               {isMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
               {isMuted ? "MUTED" : "LIVE"}
             </button>
+            {/* Video toggle */}
+            <button
+              onClick={() => setVideoOpen(o => !o)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold tracking-widest border transition-colors relative ${
+                videoOpen
+                  ? "border-primary/60 text-primary bg-primary/10"
+                  : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40"
+              }`}
+            >
+              {(activeSession?.videoTracks.length ?? 0) > 0 ? <Video className="w-3 h-3" /> : <VideoOff className="w-3 h-3" />}
+              VIDEO
+              {(activeSession?.videoTracks.length ?? 0) > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-green-400 w-2 h-2 rounded-full animate-pulse" />
+              )}
+            </button>
             {/* Members toggle */}
             <button
               onClick={() => setMembersOpen(o => !o)}
@@ -620,6 +662,40 @@ export default function Rooms() {
           </div>
         )}
 
+        {/* ── Video panel ────────────────────────────────────────────────────── */}
+        {videoOpen && activeSession && (
+          <div className="w-80 shrink-0 border-r border-border flex flex-col bg-black">
+            <div className="border-b border-border/50 px-3 py-2 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <Video className="w-3 h-3 text-primary" />
+                <span className="text-[10px] font-bold tracking-widest uppercase text-primary">LIVE VIDEO</span>
+                {(activeSession.videoTracks.length) > 0 && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] text-muted-foreground">{activeSession.videoTracks.length} stream(s)</span>
+                <button onClick={() => setVideoOpen(false)} className="text-muted-foreground hover:text-foreground">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 relative bg-black">
+              {activeSession.videoTracks.length === 0 ? (
+                <div className="absolute inset-0 flex items-center justify-center text-center">
+                  <div>
+                    <VideoOff className="w-8 h-8 mx-auto mb-2 text-muted-foreground/30" />
+                    <p className="text-[9px] uppercase tracking-widest text-muted-foreground/50">No video stream</p>
+                    <p className="text-[8px] text-muted-foreground/30 mt-1">Host may not be broadcasting video</p>
+                  </div>
+                </div>
+              ) : (
+                <div ref={videoContainerRef} className="absolute inset-0" />
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ── Chat panel ─────────────────────────────────────────────────────── */}
         {chatOpen && activeSession && (
           <div className="w-72 shrink-0 border-r border-border flex flex-col bg-background/50 font-mono">
@@ -716,36 +792,49 @@ export default function Rooms() {
                     const roomIdStr = String(room.roomId);
                     const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
                     await client.setClientRole("audience");
-                    const tracks: IRemoteAudioTrack[] = [];
+                    const audioTracks: IRemoteAudioTrack[] = [];
+                    const videoTracks: IRemoteVideoTrack[] = [];
                     client.on("user-published", async (user, mediaType) => {
                       if (mediaType === "audio") {
                         const track = await client.subscribe(user, mediaType);
-                        tracks.push(track);
+                        audioTracks.push(track);
                         track.play();
                         setActiveSession(prev => prev ? { ...prev, audioTracks: [...prev.audioTracks, track] } : prev);
+                      } else if (mediaType === "video") {
+                        const track = await client.subscribe(user, "video") as IRemoteVideoTrack;
+                        videoTracks.push(track);
+                        setActiveSession(prev => prev ? { ...prev, videoTracks: [...prev.videoTracks, track] } : prev);
                       }
                     });
+                    client.on("user-unpublished", (_user, mediaType) => {
+                      if (mediaType === "video") setActiveSession(prev => prev ? { ...prev, videoTracks: [] } : prev);
+                    });
                     await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
-                    setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks: tracks, muted: false, localTrack: null, isTalking: false, micMuted: false });
+                    setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks, videoTracks, muted: false, localTrack: null, isTalking: false, micMuted: false });
                   }}
                   onTalk={async (token) => {
                     await stopSession();
                     const roomIdStr = String(room.roomId);
                     const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
                     await client.setClientRole("host");
-                    const tracks: IRemoteAudioTrack[] = [];
+                    const audioTracks: IRemoteAudioTrack[] = [];
+                    const videoTracks: IRemoteVideoTrack[] = [];
                     client.on("user-published", async (user, mediaType) => {
                       if (mediaType === "audio") {
                         const track = await client.subscribe(user, mediaType);
-                        tracks.push(track);
+                        audioTracks.push(track);
                         track.play();
                         setActiveSession(prev => prev ? { ...prev, audioTracks: [...prev.audioTracks, track] } : prev);
+                      } else if (mediaType === "video") {
+                        const track = await client.subscribe(user, "video") as IRemoteVideoTrack;
+                        videoTracks.push(track);
+                        setActiveSession(prev => prev ? { ...prev, videoTracks: [...prev.videoTracks, track] } : prev);
                       }
                     });
                     const localTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "music_standard", AEC: true, ANS: true, AGC: true });
                     await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
                     await client.publish([localTrack]);
-                    setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks: tracks, muted: false, localTrack, isTalking: true, micMuted: false });
+                    setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks, videoTracks, muted: false, localTrack, isTalking: true, micMuted: false });
                     setIsMicMuted(false);
                   }}
                   onStop={stopSession}
@@ -786,41 +875,49 @@ export default function Rooms() {
                   const roomIdStr = String(room.roomId);
                   const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
                   await client.setClientRole("audience");
-                  const tracks: IRemoteAudioTrack[] = [];
+                  const audioTracks: IRemoteAudioTrack[] = [];
+                  const videoTracks: IRemoteVideoTrack[] = [];
                   client.on("user-published", async (user, mediaType) => {
                     if (mediaType === "audio") {
                       const track = await client.subscribe(user, mediaType);
-                      tracks.push(track);
+                      audioTracks.push(track);
                       track.play();
                       setActiveSession(prev => prev ? { ...prev, audioTracks: [...prev.audioTracks, track] } : prev);
+                    } else if (mediaType === "video") {
+                      const track = await client.subscribe(user, "video") as IRemoteVideoTrack;
+                      videoTracks.push(track);
+                      setActiveSession(prev => prev ? { ...prev, videoTracks: [...prev.videoTracks, track] } : prev);
                     }
                   });
                   client.on("user-unpublished", (_user, mediaType) => {
-                    if (mediaType === "audio") {
-                      setActiveSession(prev => prev ? { ...prev, audioTracks: prev.audioTracks.filter(t => t !== t) } : prev);
-                    }
+                    if (mediaType === "video") setActiveSession(prev => prev ? { ...prev, videoTracks: [] } : prev);
                   });
                   await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
-                  setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks: tracks, muted: false, localTrack: null, isTalking: false, micMuted: false });
+                  setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks, videoTracks, muted: false, localTrack: null, isTalking: false, micMuted: false });
                 }}
                 onTalk={async (token) => {
                   await stopSession();
                   const roomIdStr = String(room.roomId);
                   const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
                   await client.setClientRole("host");
-                  const tracks: IRemoteAudioTrack[] = [];
+                  const audioTracks: IRemoteAudioTrack[] = [];
+                  const videoTracks: IRemoteVideoTrack[] = [];
                   client.on("user-published", async (user, mediaType) => {
                     if (mediaType === "audio") {
                       const track = await client.subscribe(user, mediaType);
-                      tracks.push(track);
+                      audioTracks.push(track);
                       track.play();
                       setActiveSession(prev => prev ? { ...prev, audioTracks: [...prev.audioTracks, track] } : prev);
+                    } else if (mediaType === "video") {
+                      const track = await client.subscribe(user, "video") as IRemoteVideoTrack;
+                      videoTracks.push(track);
+                      setActiveSession(prev => prev ? { ...prev, videoTracks: [...prev.videoTracks, track] } : prev);
                     }
                   });
                   const localTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "music_standard", AEC: true, ANS: true, AGC: true });
                   await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
                   await client.publish([localTrack]);
-                  setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks: tracks, muted: false, localTrack, isTalking: true, micMuted: false });
+                  setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks, videoTracks, muted: false, localTrack, isTalking: true, micMuted: false });
                   setIsMicMuted(false);
                 }}
                 onStop={stopSession}
