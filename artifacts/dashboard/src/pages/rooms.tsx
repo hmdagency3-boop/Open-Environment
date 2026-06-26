@@ -92,9 +92,10 @@ export default function Rooms() {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // ── Members state ─────────────────────────────────────────────────────────
-  const [membersOpen,    setMembersOpen]    = useState(false);
-  const [members,        setMembers]        = useState<RoomMember[]>([]);
-  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersOpen,        setMembersOpen]        = useState(false);
+  const [members,            setMembers]            = useState<RoomMember[]>([]);
+  const [membersLoading,     setMembersLoading]     = useState(false);
+  const [agoraPublisherUids, setAgoraPublisherUids] = useState<number[]>([]);
 
   // ── Search state ────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
@@ -177,11 +178,18 @@ export default function Rooms() {
           return;
         }
 
-        const ChatroomMod = await import("nim-web-sdk-ng/dist/v1/CHATROOM_BROWSER_SDK");
+        const ChatroomMod = await import("nim-web-sdk-ng/dist/v1/CHATROOM_BROWSER_SDK.js");
         const Chatroom = (ChatroomMod as any).default ?? ChatroomMod;
         if (cancelled) return;
 
-        const chatroomAddresses = addrData.addresses ?? [];
+        const chatroomAddresses: string[] = addrData.addresses ?? [];
+
+        if (chatroomAddresses.length === 0) {
+          console.warn("[NIM] No chatroom addresses available — chat disabled for this session.");
+          if (!cancelled) setChatStatus("no_credentials");
+          return;
+        }
+
         console.log("[NIM] Connecting with:", {
           appkey: creds.nimAppKey,
           account: creds.nimAccount ?? String(SESSION_UID),
@@ -286,68 +294,46 @@ export default function Rooms() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages.length]);
 
-  // ── Members polling via NIM SDK ──────────────────────────────────────────
+  // ── Members: load profiles for Agora publishers ───────────────────────────
   useEffect(() => {
-    if (!membersOpen || !activeSession || chatStatus !== "connected") {
-      if (!membersOpen || !activeSession) setMembers([]);
-      return;
-    }
+    if (!activeSession) { setMembers([]); return; }
+    if (agoraPublisherUids.length === 0) { setMembers([]); return; }
     let cancelled = false;
+    setMembersLoading(true);
 
-    function nimMemberToRoomMember(m: any): RoomMember {
-      let custom: Record<string, unknown> = {};
-      try { custom = JSON.parse(m.custom ?? "{}"); } catch {}
-      return {
-        uid:         parseInt(m.account) || 0,
-        nick:        m.nick ?? "",
-        avatar:      m.avatar ?? null,
-        gender:      null,
-        isManager:   m.chatroomMemberType === "manager" || m.chatroomMemberType === "creator",
-        isCreator:   m.chatroomMemberType === "creator",
-        onMic:       false,
-        inRoom:      true,
-        growthLevel: Number(custom.growthLevel ?? custom.lv ?? 0),
-        charmLevel:  Number(custom.charmLevel ?? 0),
-        carName:     (custom.carName as string) ?? null,
-        noLv:        Number(custom.noLv ?? 0),
-        erbanNo:     typeof custom.erbanNo === "number" ? custom.erbanNo : null,
-      };
-    }
-
-    async function fetchMembers() {
+    Promise.allSettled(
+      agoraPublisherUids.map(uid =>
+        fetch(`/api/ditto/user/${uid}/profile`).then(r => r.json())
+      )
+    ).then(results => {
       if (cancelled) return;
-      const nim = nimChatroomRef.current as any;
-      // The NIM v8 SDK exposes member queries via nim.chatroomMember service
-      const memberSvc = nim?.chatroomMember;
-      if (!memberSvc) return;
-      setMembersLoading(true);
-      try {
-        // Query both temp (online visitors) and regular (fixed) members
-        const [temp, regular] = await Promise.allSettled([
-          memberSvc.queryMembers({ type: "temp",    limit: 100 }),
-          memberSvc.queryMembers({ type: "regular", limit: 100 }),
-        ]);
-        const combined: any[] = [
-          ...(temp.status    === "fulfilled" && Array.isArray(temp.value)    ? temp.value    : []),
-          ...(regular.status === "fulfilled" && Array.isArray(regular.value) ? regular.value : []),
-        ];
-        if (!cancelled && combined.length > 0) {
-          const seen = new Set<number>();
-          const mapped = combined
-            .map(nimMemberToRoomMember)
-            .filter(m => m.uid > 0 && !seen.has(m.uid) && seen.add(m.uid));
-          setMembers(mapped);
-        }
-      } catch (e) {
-        console.warn("[Members] queryMembers failed:", e);
-      }
-      if (!cancelled) setMembersLoading(false);
-    }
+      const mapped: RoomMember[] = results
+        .filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled")
+        .map(r => {
+          const v = r.value;
+          return {
+            uid:         Number(v.uid ?? 0),
+            nick:        v.nickname ?? v.nick ?? "",
+            avatar:      v.avatar ?? null,
+            gender:      v.gender ?? null,
+            isManager:   false,
+            isCreator:   false,
+            onMic:       true,
+            inRoom:      true,
+            growthLevel: v.level ?? 0,
+            charmLevel:  0,
+            carName:     null,
+            noLv:        0,
+            erbanNo:     v.erbanNo ?? null,
+          };
+        })
+        .filter(m => m.uid > 0);
+      setMembers(mapped);
+      setMembersLoading(false);
+    });
 
-    fetchMembers();
-    const timer = setInterval(fetchMembers, 30000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [membersOpen, activeSession?.roomId, chatStatus]);
+    return () => { cancelled = true; };
+  }, [activeSession?.roomId, agoraPublisherUids]);
 
   const stopSession = useCallback(async () => {
     if (!activeSession) return;
@@ -364,6 +350,8 @@ export default function Rooms() {
     setIsMuted(false);
     setIsMicMuted(false);
     setVideoOpen(false);
+    setAgoraPublisherUids([]);
+    setMembers([]);
   }, [activeSession]);
 
   const toggleMute = useCallback(() => {
@@ -606,18 +594,19 @@ export default function Rooms() {
                 <div className="flex items-center justify-center h-24 text-muted-foreground px-3">
                   <div className="text-center">
                     <Users className="w-4 h-4 mx-auto mb-1 opacity-30" />
-                    {chatStatus === "connected" ? (
-                      <p className="text-[9px] uppercase tracking-widest opacity-60">No members</p>
-                    ) : chatStatus === "connecting" ? (
-                      <p className="text-[9px] text-yellow-400/70">Waiting for NIM...</p>
-                    ) : chatStatus === "no_credentials" ? (
-                      <p className="text-[9px] text-orange-400/80 leading-relaxed">NIM token needed<br/>(inject netEaseToken)</p>
-                    ) : chatStatus === "failed" ? (
-                      <p className="text-[9px] text-destructive/70">NIM connect failed</p>
-                    ) : (
-                      <p className="text-[9px] opacity-40">Open chat first</p>
-                    )}
+                    <p className="text-[9px] uppercase tracking-widest opacity-60">
+                      {agoraPublisherUids.length === 0
+                        ? "Waiting for speakers..."
+                        : "Loading profiles..."}
+                    </p>
+                    <p className="text-[8px] opacity-30 mt-1">Shows active mic users</p>
                   </div>
+                </div>
+              )}
+              {/* ON MIC badge label */}
+              {members.length > 0 && (
+                <div className="px-2 py-1 border-b border-border/20 bg-muted/10">
+                  <span className="text-[8px] text-primary/60 uppercase tracking-widest font-bold">🎙 ON MIC · {members.length}</span>
                 </div>
               )}
               {members.map(m => (
@@ -799,6 +788,7 @@ export default function Rooms() {
                     const audioTracks: IRemoteAudioTrack[] = [];
                     const videoTracks: IRemoteVideoTrack[] = [];
                     client.on("user-published", async (user, mediaType) => {
+                      setAgoraPublisherUids(prev => [...new Set([...prev, user.uid as number])]);
                       if (mediaType === "audio") {
                         const track = await client.subscribe(user, mediaType);
                         audioTracks.push(track);
@@ -810,8 +800,12 @@ export default function Rooms() {
                         setActiveSession(prev => prev ? { ...prev, videoTracks: [...prev.videoTracks, track] } : prev);
                       }
                     });
-                    client.on("user-unpublished", (_user, mediaType) => {
+                    client.on("user-unpublished", (user, mediaType) => {
+                      if (mediaType === "audio") setAgoraPublisherUids(prev => prev.filter(id => id !== (user.uid as number)));
                       if (mediaType === "video") setActiveSession(prev => prev ? { ...prev, videoTracks: [] } : prev);
+                    });
+                    client.on("user-left", (user) => {
+                      setAgoraPublisherUids(prev => prev.filter(id => id !== (user.uid as number)));
                     });
                     await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
                     setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks, videoTracks, muted: false, localTrack: null, isTalking: false, micMuted: false });
@@ -824,6 +818,7 @@ export default function Rooms() {
                     const audioTracks: IRemoteAudioTrack[] = [];
                     const videoTracks: IRemoteVideoTrack[] = [];
                     client.on("user-published", async (user, mediaType) => {
+                      setAgoraPublisherUids(prev => [...new Set([...prev, user.uid as number])]);
                       if (mediaType === "audio") {
                         const track = await client.subscribe(user, mediaType);
                         audioTracks.push(track);
@@ -834,6 +829,9 @@ export default function Rooms() {
                         videoTracks.push(track);
                         setActiveSession(prev => prev ? { ...prev, videoTracks: [...prev.videoTracks, track] } : prev);
                       }
+                    });
+                    client.on("user-left", (user) => {
+                      setAgoraPublisherUids(prev => prev.filter(id => id !== (user.uid as number)));
                     });
                     const localTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "music_standard", AEC: true, ANS: true, AGC: true });
                     await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
@@ -882,6 +880,7 @@ export default function Rooms() {
                   const audioTracks: IRemoteAudioTrack[] = [];
                   const videoTracks: IRemoteVideoTrack[] = [];
                   client.on("user-published", async (user, mediaType) => {
+                    setAgoraPublisherUids(prev => [...new Set([...prev, user.uid as number])]);
                     if (mediaType === "audio") {
                       const track = await client.subscribe(user, mediaType);
                       audioTracks.push(track);
@@ -893,8 +892,12 @@ export default function Rooms() {
                       setActiveSession(prev => prev ? { ...prev, videoTracks: [...prev.videoTracks, track] } : prev);
                     }
                   });
-                  client.on("user-unpublished", (_user, mediaType) => {
+                  client.on("user-unpublished", (user, mediaType) => {
+                    if (mediaType === "audio") setAgoraPublisherUids(prev => prev.filter(id => id !== (user.uid as number)));
                     if (mediaType === "video") setActiveSession(prev => prev ? { ...prev, videoTracks: [] } : prev);
+                  });
+                  client.on("user-left", (user) => {
+                    setAgoraPublisherUids(prev => prev.filter(id => id !== (user.uid as number)));
                   });
                   await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
                   setActiveSession({ roomId: roomIdStr, roomName: room.nick ?? room.roomName ?? "", client, audioTracks, videoTracks, muted: false, localTrack: null, isTalking: false, micMuted: false });
@@ -907,6 +910,7 @@ export default function Rooms() {
                   const audioTracks: IRemoteAudioTrack[] = [];
                   const videoTracks: IRemoteVideoTrack[] = [];
                   client.on("user-published", async (user, mediaType) => {
+                    setAgoraPublisherUids(prev => [...new Set([...prev, user.uid as number])]);
                     if (mediaType === "audio") {
                       const track = await client.subscribe(user, mediaType);
                       audioTracks.push(track);
@@ -917,6 +921,9 @@ export default function Rooms() {
                       videoTracks.push(track);
                       setActiveSession(prev => prev ? { ...prev, videoTracks: [...prev.videoTracks, track] } : prev);
                     }
+                  });
+                  client.on("user-left", (user) => {
+                    setAgoraPublisherUids(prev => prev.filter(id => id !== (user.uid as number)));
                   });
                   const localTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "music_standard", AEC: true, ANS: true, AGC: true });
                   await client.join(AGORA_APP_ID, roomIdStr, token, SESSION_UID);
