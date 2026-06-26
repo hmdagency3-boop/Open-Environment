@@ -179,7 +179,7 @@ Tested live, batch-verified June 24-25 2026:
 | `/fans/list` | GET | المتابعون — pageNo=1 pageSize=20 |
 | ~~`/room/getTRtcToken`~~ | — | **مُصحَّح: يعمل من Replit — انتقل للقائمة العاملة** |
 | `/imsvr/v1/sendText` | POST | إرسال رسالة — roomId=... type=1 content=... |
-| `/imsvr/v1/v3/fetchRoomMembers` | POST | أعضاء الغرفة — roomId=... limit=50 |
+| `/imsvr/v1/v3/fetchRoomMembers` | POST | ⚠️ CDN-locked — code 10003 حتى مع appcode صح. الـ params الصح: `limit=20`, `userScore=`, `vipScore=`, `deviceId=27e0073c1e0d132a0b66a84ff8ada5baa`. **الحل: استخدام NIM SDK `getChatroomMembers()` مباشرةً من الـ frontend.** |
 | `/room/rocket/reEnter` | POST | إعادة دخول صاروخ — roomUid=... roomType=3 |
 | `/room/mic/lockmic` | POST | قفل مايك — roomId=... position=... state=... |
 | `/oauth/ticket` | POST | تجديد ticket ⚡ من NOX فقط |

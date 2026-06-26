@@ -203,26 +203,68 @@ export default function Rooms() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages.length]);
 
-  // ── Members polling ──────────────────────────────────────────────────────
+  // ── Members polling via NIM SDK ──────────────────────────────────────────
   useEffect(() => {
     if (!membersOpen || !activeSession) {
       setMembers([]);
       return;
     }
     let cancelled = false;
+
+    function nimFetchMembers(): Promise<RoomMember[]> {
+      return new Promise((resolve) => {
+        const nim = nimChatroomRef.current as any;
+        if (!nim || typeof nim.getChatroomMembers !== "function") {
+          resolve([]); return;
+        }
+        nim.getChatroomMembers({
+          guest: false,
+          limit: 100,
+          success(obj: any) {
+            const raw: any[] = obj?.members ?? [];
+            resolve(raw.map(m => {
+              let custom: Record<string, unknown> = {};
+              try { custom = JSON.parse(m.custom ?? "{}"); } catch {}
+              return {
+                uid:         parseInt(m.account) || 0,
+                nick:        m.nick ?? "",
+                avatar:      m.avatar ?? null,
+                gender:      null,
+                isManager:   m.type === 1 || m.type === 2 || m.type === 3,
+                isCreator:   m.type === 1,
+                onMic:       false,
+                inRoom:      true,
+                growthLevel: Number(custom.growthLevel ?? custom.lv ?? 0),
+                charmLevel:  Number(custom.charmLevel ?? 0),
+                carName:     (custom.carName as string) ?? null,
+                noLv:        Number(custom.noLv ?? 0),
+                erbanNo:     typeof custom.erbanNo === "number" ? custom.erbanNo : null,
+              } as RoomMember;
+            }));
+          },
+          error() { resolve([]); },
+        });
+      });
+    }
+
     async function fetchMembers() {
       if (cancelled) return;
       setMembersLoading(true);
       try {
-        const res = await fetch(`/api/ditto/room-members/${activeSession!.roomId}`);
-        const data = await res.json() as { ok: boolean; members: RoomMember[] };
-        if (!cancelled && data.ok) setMembers(data.members);
+        const nimMembers = await nimFetchMembers();
+        if (!cancelled && nimMembers.length > 0) {
+          setMembers(nimMembers);
+        }
       } catch {}
       if (!cancelled) setMembersLoading(false);
     }
-    fetchMembers();
+
+    // Wait briefly for NIM to connect before first fetch
+    const initDelay = setTimeout(() => {
+      fetchMembers();
+    }, 1500);
     const timer = setInterval(fetchMembers, 30000);
-    return () => { cancelled = true; clearInterval(timer); };
+    return () => { cancelled = true; clearTimeout(initDelay); clearInterval(timer); };
   }, [membersOpen, activeSession?.roomId]);
 
   const stopSession = useCallback(async () => {
