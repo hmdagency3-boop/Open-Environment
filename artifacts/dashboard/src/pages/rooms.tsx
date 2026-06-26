@@ -160,6 +160,8 @@ export default function Rooms() {
           },
           onmsgs: (msgs: any[]) => {
             if (cancelled) return;
+
+            // ── Chat messages ──────────────────────────────────────────────
             const newMsgs: ChatMessage[] = msgs
               .filter(m => m.type === "text" || m.text || m.type === "custom")
               .map(m => ({
@@ -171,9 +173,44 @@ export default function Rooms() {
                   : JSON.stringify(m.attach ?? m.custom ?? "")),
                 ts: m.time ?? Date.now(),
               }));
-            if (newMsgs.length === 0) return;
-            setChatMessages(prev => [...prev, ...newMsgs].slice(-300));
-            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+            if (newMsgs.length > 0) {
+              setChatMessages(prev => [...prev, ...newMsgs].slice(-300));
+              setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+            }
+
+            // ── Member enter / exit notifications ─────────────────────────
+            for (const m of msgs) {
+              if (m.type !== "chatroomNotification") continue;
+              const nType = m.attach?.type as string | undefined;
+              const rawMembers: any[] = m.attach?.members ?? (m.attach?.member ? [m.attach.member] : []);
+              if (nType === "memberEnter" && rawMembers.length > 0) {
+                const entering: RoomMember[] = rawMembers.map((nm: any) => {
+                  let custom: Record<string, unknown> = {};
+                  try { custom = JSON.parse(nm.custom ?? "{}"); } catch {}
+                  return {
+                    uid: parseInt(nm.account) || 0,
+                    nick: nm.nick ?? "",
+                    avatar: nm.avatar ?? null,
+                    gender: null,
+                    isManager: nm.chatroomMemberType === "manager" || nm.chatroomMemberType === "creator",
+                    isCreator: nm.chatroomMemberType === "creator",
+                    onMic: false, inRoom: true,
+                    growthLevel: Number(custom.growthLevel ?? custom.lv ?? 0),
+                    charmLevel: Number(custom.charmLevel ?? 0),
+                    carName: (custom.carName as string) ?? null,
+                    noLv: Number(custom.noLv ?? 0),
+                    erbanNo: typeof custom.erbanNo === "number" ? custom.erbanNo : null,
+                  } as RoomMember;
+                });
+                setMembers(prev => {
+                  const existing = new Set(prev.map(p => p.uid));
+                  return [...prev, ...entering.filter(e => !existing.has(e.uid))];
+                });
+              } else if (nType === "memberExit" && rawMembers.length > 0) {
+                const leavingUids = new Set(rawMembers.map((nm: any) => parseInt(nm.account)));
+                setMembers(prev => prev.filter(p => !leavingUids.has(p.uid)));
+              }
+            }
           },
           ondisconnect: () => {
             if (!cancelled) setChatStatus("idle");
@@ -205,67 +242,66 @@ export default function Rooms() {
 
   // ── Members polling via NIM SDK ──────────────────────────────────────────
   useEffect(() => {
-    if (!membersOpen || !activeSession) {
-      setMembers([]);
+    if (!membersOpen || !activeSession || chatStatus !== "connected") {
+      if (!membersOpen || !activeSession) setMembers([]);
       return;
     }
     let cancelled = false;
 
-    function nimFetchMembers(): Promise<RoomMember[]> {
-      return new Promise((resolve) => {
-        const nim = nimChatroomRef.current as any;
-        if (!nim || typeof nim.getChatroomMembers !== "function") {
-          resolve([]); return;
-        }
-        nim.getChatroomMembers({
-          guest: false,
-          limit: 100,
-          success(obj: any) {
-            const raw: any[] = obj?.members ?? [];
-            resolve(raw.map(m => {
-              let custom: Record<string, unknown> = {};
-              try { custom = JSON.parse(m.custom ?? "{}"); } catch {}
-              return {
-                uid:         parseInt(m.account) || 0,
-                nick:        m.nick ?? "",
-                avatar:      m.avatar ?? null,
-                gender:      null,
-                isManager:   m.type === 1 || m.type === 2 || m.type === 3,
-                isCreator:   m.type === 1,
-                onMic:       false,
-                inRoom:      true,
-                growthLevel: Number(custom.growthLevel ?? custom.lv ?? 0),
-                charmLevel:  Number(custom.charmLevel ?? 0),
-                carName:     (custom.carName as string) ?? null,
-                noLv:        Number(custom.noLv ?? 0),
-                erbanNo:     typeof custom.erbanNo === "number" ? custom.erbanNo : null,
-              } as RoomMember;
-            }));
-          },
-          error() { resolve([]); },
-        });
-      });
+    function nimMemberToRoomMember(m: any): RoomMember {
+      let custom: Record<string, unknown> = {};
+      try { custom = JSON.parse(m.custom ?? "{}"); } catch {}
+      return {
+        uid:         parseInt(m.account) || 0,
+        nick:        m.nick ?? "",
+        avatar:      m.avatar ?? null,
+        gender:      null,
+        isManager:   m.chatroomMemberType === "manager" || m.chatroomMemberType === "creator",
+        isCreator:   m.chatroomMemberType === "creator",
+        onMic:       false,
+        inRoom:      true,
+        growthLevel: Number(custom.growthLevel ?? custom.lv ?? 0),
+        charmLevel:  Number(custom.charmLevel ?? 0),
+        carName:     (custom.carName as string) ?? null,
+        noLv:        Number(custom.noLv ?? 0),
+        erbanNo:     typeof custom.erbanNo === "number" ? custom.erbanNo : null,
+      };
     }
 
     async function fetchMembers() {
       if (cancelled) return;
+      const nim = nimChatroomRef.current as any;
+      // The NIM v8 SDK exposes member queries via nim.chatroomMember service
+      const memberSvc = nim?.chatroomMember;
+      if (!memberSvc) return;
       setMembersLoading(true);
       try {
-        const nimMembers = await nimFetchMembers();
-        if (!cancelled && nimMembers.length > 0) {
-          setMembers(nimMembers);
+        // Query both temp (online visitors) and regular (fixed) members
+        const [temp, regular] = await Promise.allSettled([
+          memberSvc.queryMembers({ type: "temp",    limit: 100 }),
+          memberSvc.queryMembers({ type: "regular", limit: 100 }),
+        ]);
+        const combined: any[] = [
+          ...(temp.status    === "fulfilled" && Array.isArray(temp.value)    ? temp.value    : []),
+          ...(regular.status === "fulfilled" && Array.isArray(regular.value) ? regular.value : []),
+        ];
+        if (!cancelled && combined.length > 0) {
+          const seen = new Set<number>();
+          const mapped = combined
+            .map(nimMemberToRoomMember)
+            .filter(m => m.uid > 0 && !seen.has(m.uid) && seen.add(m.uid));
+          setMembers(mapped);
         }
-      } catch {}
+      } catch (e) {
+        console.warn("[Members] queryMembers failed:", e);
+      }
       if (!cancelled) setMembersLoading(false);
     }
 
-    // Wait briefly for NIM to connect before first fetch
-    const initDelay = setTimeout(() => {
-      fetchMembers();
-    }, 1500);
+    fetchMembers();
     const timer = setInterval(fetchMembers, 30000);
-    return () => { cancelled = true; clearTimeout(initDelay); clearInterval(timer); };
-  }, [membersOpen, activeSession?.roomId]);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [membersOpen, activeSession?.roomId, chatStatus]);
 
   const stopSession = useCallback(async () => {
     if (!activeSession) return;
@@ -504,10 +540,20 @@ export default function Rooms() {
             </div>
             <div className="flex-1 overflow-y-auto">
               {members.length === 0 && !membersLoading && (
-                <div className="flex items-center justify-center h-20 text-muted-foreground">
+                <div className="flex items-center justify-center h-24 text-muted-foreground px-3">
                   <div className="text-center">
                     <Users className="w-4 h-4 mx-auto mb-1 opacity-30" />
-                    <p className="text-[9px] uppercase tracking-widest opacity-60">No members</p>
+                    {chatStatus === "connected" ? (
+                      <p className="text-[9px] uppercase tracking-widest opacity-60">No members</p>
+                    ) : chatStatus === "connecting" ? (
+                      <p className="text-[9px] text-yellow-400/70">Waiting for NIM...</p>
+                    ) : chatStatus === "no_credentials" ? (
+                      <p className="text-[9px] text-orange-400/80 leading-relaxed">NIM token needed<br/>(inject netEaseToken)</p>
+                    ) : chatStatus === "failed" ? (
+                      <p className="text-[9px] text-destructive/70">NIM connect failed</p>
+                    ) : (
+                      <p className="text-[9px] opacity-40">Open chat first</p>
+                    )}
                   </div>
                 </div>
               )}
