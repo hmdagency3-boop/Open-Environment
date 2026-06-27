@@ -24,6 +24,7 @@ interface ExtendedProfile {
   avatar?: string | null;
   signature?: string | null;
   erbanNo?: number | null;
+  hasPrettyErbanNo?: boolean | null;
   fansNum?: number | null;
   followNum?: number | null;
   level?: number | null;
@@ -32,21 +33,28 @@ interface ExtendedProfile {
   countryCode?: string | null;
   countryName?: string | null;
   countryIcon?: string | null;
+  countryGroup?: string | null;
   vipLevel?: number | null;
   vipName?: string | null;
   vipIcon?: string | null;
   vipMedal?: string | null;
   vipInfoDto?: Record<string, unknown> | null;
+  svipInfo?: { level?: number; personalPageEffect?: string; svipStatus?: number; privilegeDataList?: number[] } | null;
   gender?: number | null;
   age?: number | null;
   growthLevel?: number | null;
+  growthLevelPic?: string | null;
   experLevel?: number | null;
   experLevelPic?: string | null;
   charmLevel?: number | null;
   charmLevelPic?: string | null;
+  noLv?: number | null;
   carName?: string | null;
   carUrl?: string | null;
   carVideoUrl?: string | null;
+  headwearName?: string | null;
+  headwearUrl?: string | null;
+  ban?: number | null;
   userMedalList?: Array<{ id: number; url: string; name: string; expiration?: number }>;
   userRoles?: number[];
   userWearPropList?: unknown[];
@@ -109,9 +117,12 @@ export default function Search() {
     ? { label: "DIRECT",       cls: "bg-primary/20 text-primary border-primary/30" }
     : null;
 
-  const hasLevels = profile?.experLevel != null || profile?.charmLevel != null || profile?.growthLevel != null;
-  const hasCar    = !!(profile?.carName || profile?.carUrl);
-  const medals    = profile?.userMedalList ?? [];
+  const hasLevels    = profile?.experLevel != null || profile?.charmLevel != null || profile?.growthLevel != null || profile?.noLv != null;
+  const hasCar       = !!(profile?.carName || profile?.carUrl);
+  const hasHeadwear  = !!(profile?.headwearName || profile?.headwearUrl);
+  const hasSvip      = !!(profile?.svipInfo?.level);
+  const medals       = profile?.userMedalList ?? [];
+  const isBanned     = profile?.ban != null && profile.ban > 0;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto font-mono">
@@ -242,6 +253,11 @@ export default function Search() {
                     <Radio className="w-2.5 h-2.5 animate-pulse" /> LIVE
                   </Badge>
                 )}
+                {isBanned && (
+                  <Badge className="rounded-none font-bold bg-red-700/30 text-red-300 border border-red-700/50 text-[10px]">
+                    BANNED
+                  </Badge>
+                )}
                 {sourceBadge && (
                   <Badge className={`rounded-none font-bold border text-[10px] ${sourceBadge.cls}`}>
                     {sourceBadge.label}
@@ -289,15 +305,17 @@ export default function Search() {
 
                 {/* Info grid */}
                 <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-2.5">
-                  <InfoCell label="UID"       value={gifts?.uid ?? activeUid}  color="text-primary" />
-                  <InfoCell label="NICKNAME"  value={profile?.nickname} />
-                  <InfoCell label="ERBAN_NO"  value={profile?.erbanNo != null ? String(profile.erbanNo) : undefined} />
-                  <InfoCell label="COUNTRY"   value={profile?.countryName ?? profile?.countryCode} />
-                  <InfoCell label="AGE"       value={profile?.age != null ? `${profile.age} yrs` : undefined} />
-                  <InfoCell label="VIP"       value={profile?.vipName || (profile?.vipLevel ? `Level ${profile.vipLevel}` : undefined)} color="text-yellow-400" />
-                  <InfoCell label="FANS"      value={profile?.fansNum?.toLocaleString()}  color="text-secondary" />
-                  <InfoCell label="FOLLOWING" value={profile?.followNum?.toLocaleString()} />
-                  <InfoCell label="DIAMOND"   value={profile?.diamond != null ? String(profile.diamond) : undefined} color="text-yellow-300" />
+                  <InfoCell label="UID"          value={gifts?.uid ?? activeUid}  color="text-primary" />
+                  <InfoCell label="NICKNAME"     value={profile?.nickname} />
+                  <InfoCell label="ERBAN_NO"     value={profile?.erbanNo != null ? `${profile.erbanNo}${profile.hasPrettyErbanNo ? " ✦" : ""}` : undefined} />
+                  <InfoCell label="COUNTRY"      value={profile?.countryName ?? profile?.countryCode} />
+                  <InfoCell label="COUNTRY_GROUP" value={profile?.countryGroup ?? undefined} />
+                  <InfoCell label="AGE"          value={profile?.age != null ? `${profile.age} yrs` : undefined} />
+                  <InfoCell label="VIP"          value={profile?.vipName || (profile?.vipLevel ? `Level ${profile.vipLevel}` : undefined)} color="text-yellow-400" />
+                  <InfoCell label="SVIP"         value={profile?.svipInfo?.level ? `Level ${profile.svipInfo.level}` : undefined} color="text-purple-400" />
+                  <InfoCell label="FANS"         value={profile?.fansNum?.toLocaleString()}  color="text-secondary" />
+                  <InfoCell label="FOLLOWING"    value={profile?.followNum?.toLocaleString()} />
+                  <InfoCell label="DIAMOND"      value={profile?.diamond != null ? String(profile.diamond) : undefined} color="text-yellow-300" />
                   {profile?.signature && (
                     <InfoCell label="SIGNATURE" value={profile.signature} wide />
                   )}
@@ -327,39 +345,54 @@ export default function Search() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-4">
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   {/* Experience level */}
-                  <div className="border border-border/40 px-3 py-3 bg-background/40 flex flex-col items-center gap-2">
-                    {profile?.experLevelPic && (
-                      <img src={profile.experLevelPic} alt="exp" className="h-8 object-contain"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    )}
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Experience</div>
-                    <div className="text-xl font-bold text-accent">
-                      {profile?.experLevel != null ? `Lv ${profile.experLevel}` : "—"}
+                  {profile?.experLevel != null && (
+                    <div className="border border-border/40 px-3 py-3 bg-background/40 flex flex-col items-center gap-2">
+                      {profile.experLevelPic && (
+                        <img src={profile.experLevelPic} alt="exp" className="h-8 object-contain"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      )}
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Experience</div>
+                      <div className="text-xl font-bold text-accent">Lv {profile.experLevel}</div>
                     </div>
-                  </div>
+                  )}
                   {/* Charm level */}
-                  <div className="border border-border/40 px-3 py-3 bg-background/40 flex flex-col items-center gap-2">
-                    {profile?.charmLevelPic && (
-                      <img src={profile.charmLevelPic} alt="charm" className="h-8 object-contain"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    )}
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Charm</div>
-                    <div className="text-xl font-bold text-pink-400">
-                      {profile?.charmLevel != null ? `Lv ${profile.charmLevel}` : "—"}
+                  {profile?.charmLevel != null && (
+                    <div className="border border-border/40 px-3 py-3 bg-background/40 flex flex-col items-center gap-2">
+                      {profile.charmLevelPic && (
+                        <img src={profile.charmLevelPic} alt="charm" className="h-8 object-contain"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      )}
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Charm</div>
+                      <div className="text-xl font-bold text-pink-400">Lv {profile.charmLevel}</div>
                     </div>
-                  </div>
+                  )}
                   {/* Growth level */}
-                  <div className="border border-border/40 px-3 py-3 bg-background/40 flex flex-col items-center gap-2">
-                    <div className="h-8 flex items-center justify-center">
-                      <Shield className="w-6 h-6 text-green-400" />
+                  {profile?.growthLevel != null && (
+                    <div className="border border-border/40 px-3 py-3 bg-background/40 flex flex-col items-center gap-2">
+                      {profile.growthLevelPic ? (
+                        <img src={profile.growthLevelPic} alt="growth" className="h-8 object-contain"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      ) : (
+                        <div className="h-8 flex items-center justify-center">
+                          <Shield className="w-6 h-6 text-green-400" />
+                        </div>
+                      )}
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Growth</div>
+                      <div className="text-xl font-bold text-green-400">Lv {profile.growthLevel}</div>
                     </div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Growth</div>
-                    <div className="text-xl font-bold text-green-400">
-                      {profile?.growthLevel != null ? `Lv ${profile.growthLevel}` : "—"}
+                  )}
+                  {/* Room level (noLv) */}
+                  {profile?.noLv != null && (
+                    <div className="border border-border/40 px-3 py-3 bg-background/40 flex flex-col items-center gap-2">
+                      <div className="h-8 flex items-center justify-center">
+                        <Hash className="w-6 h-6 text-orange-400" />
+                      </div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Room Level</div>
+                      <div className="text-xl font-bold text-orange-400">Lv {profile.noLv}</div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -390,6 +423,28 @@ export default function Search() {
                       </a>
                     )}
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Headwear card ─────────────────────────────────────────────── */}
+          {hasHeadwear && (
+            <Card className="bg-card rounded-none border-purple-500/30">
+              <CardHeader className="border-b border-border pb-3 bg-purple-500/5">
+                <CardTitle className="text-sm font-mono text-purple-400 flex items-center gap-2 uppercase tracking-wider">
+                  <Package className="w-4 h-4" /> Headwear
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-5">
+                  {profile?.headwearUrl && (
+                    <div className="w-24 h-16 border border-border/40 overflow-hidden bg-muted shrink-0">
+                      <img src={profile.headwearUrl} alt={profile.headwearName ?? "headwear"} className="w-full h-full object-cover"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    </div>
+                  )}
+                  <div className="font-bold text-base">{profile?.headwearName ?? "—"}</div>
                 </div>
               </CardContent>
             </Card>
@@ -469,6 +524,35 @@ export default function Search() {
                     </div>
                   );
                 })()}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── SVIP card ─────────────────────────────────────────────────── */}
+          {hasSvip && profile?.svipInfo && (
+            <Card className="bg-card rounded-none border-purple-400/40">
+              <CardHeader className="border-b border-border pb-3 bg-purple-400/5">
+                <CardTitle className="text-sm font-mono text-purple-400 flex items-center gap-2 uppercase tracking-wider">
+                  <Star className="w-4 h-4" /> SVIP Details
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-4">
+                    {profile.svipInfo.personalPageEffect && (
+                      <div className="text-[10px] text-muted-foreground border border-purple-500/30 bg-purple-500/10 text-purple-300 px-2 py-1">
+                        HAS PROFILE EFFECT
+                      </div>
+                    )}
+                    <div>
+                      <div className="font-bold text-purple-400 uppercase text-lg">SVIP Level {profile.svipInfo.level}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {profile.svipInfo.privilegeDataList?.length ?? 0} privileges active
+                        {profile.svipInfo.svipStatus === 1 ? " · Active" : " · Inactive"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}
