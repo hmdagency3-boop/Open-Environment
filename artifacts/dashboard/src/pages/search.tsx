@@ -646,10 +646,11 @@ function Avatar({ src, size = 10 }: { src?: string | null; size?: number }) {
 function InfoCell({ label, value, color = "text-foreground", wide = false }: {
   label: string; value?: string | null; color?: string; wide?: boolean;
 }) {
+  if (!value) return null;
   return (
     <div className={`border border-border/40 px-3 py-2 bg-background/40 ${wide ? "col-span-2 md:col-span-3" : ""}`}>
       <div className="text-[10px] text-muted-foreground mb-1 uppercase tracking-wider">{label}</div>
-      <div className={`text-sm font-bold truncate ${color} ${!value ? "opacity-25" : ""}`}>{value ?? "—"}</div>
+      <div className={`text-sm font-bold truncate ${color}`}>{value}</div>
     </div>
   );
 }
