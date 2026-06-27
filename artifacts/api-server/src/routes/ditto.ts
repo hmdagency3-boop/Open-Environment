@@ -283,6 +283,56 @@ function queueWorkerJob(endpoint: string, params: Record<string, string>, timeou
   });
 }
 
+// ── GET /api/ditto/lookup/erban/:no ──────────────────────────────────────────
+// Resolves an erbanNo (pretty ID) → uid using the public payermax getInfo endpoint
+router.get("/lookup/erban/:no", async (req, res) => {
+  const { no } = req.params;
+  if (!no || !/^\d+$/.test(no)) {
+    res.status(400).json({ ok: false, error: "invalid erbanNo" }); return;
+  }
+  try {
+    const raw = await new Promise<string>((resolve, reject) => {
+      const r = httpsRequest(
+        {
+          hostname: "www.sayyouditto.com", port: 443,
+          path: `/pay/payermax/getInfo?no=${encodeURIComponent(no)}`,
+          method: "GET",
+          headers: { "user-agent": "okhttp/4.12.0", "accept-encoding": "gzip" },
+        },
+        (resp) => {
+          const chunks: Buffer[] = [];
+          resp.on("data", (c: Buffer) => chunks.push(c));
+          resp.on("end", () => {
+            let buf = Buffer.concat(chunks);
+            if (resp.headers["content-encoding"] === "gzip") {
+              try { buf = gunzipSync(buf); } catch { /* not gzip */ }
+            }
+            resolve(buf.toString("utf8"));
+          });
+        },
+      );
+      r.on("error", reject);
+      r.setTimeout(8000, () => { r.destroy(new Error("Timeout")); });
+      r.end();
+    });
+    const json = JSON.parse(raw) as Record<string, unknown>;
+    if (json.code !== 200 || !json.data) {
+      res.status(404).json({ ok: false, error: "user not found" }); return;
+    }
+    const d = json.data as Record<string, unknown>;
+    res.json({
+      ok: true,
+      uid:      d.uid      ?? null,
+      erbanNo:  d.erbanNo  ?? null,
+      nick:     d.nick     ?? null,
+      avatar:   d.avatar   ?? null,
+      country:  d.country  ?? null,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
 // ── GET /api/ditto/session ────────────────────────────────────────────────────
 router.get("/session", (_req, res) => {
   try {

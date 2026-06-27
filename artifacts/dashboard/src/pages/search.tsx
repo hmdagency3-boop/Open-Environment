@@ -95,6 +95,8 @@ export default function Search() {
   const [mode, setMode] = useState<SearchMode>("uid");
   const [activeUid, setActiveUid] = useState<string | null>(null);
   const [activeQuery, setActiveQuery] = useState<string | null>(null);
+  const [erbanLoading, setErbanLoading] = useState(false);
+  const [erbanError, setErbanError] = useState<string | null>(null);
 
   // ── Queries ───────────────────────────────────────────────────────────────
   const { data: gifts, isLoading: giftsLoading, isFetching: giftsFetching } = useGetUserByUid(
@@ -110,18 +112,10 @@ export default function Search() {
 
   const { data: searchResult, isLoading: searchLoading, isFetching: searchFetching } = useSearchUsers(
     { q: activeQuery ?? "" },
-    { query: { enabled: !!activeQuery && (mode === "name" || mode === "erban"), queryKey: getSearchUsersQueryKey({ q: activeQuery ?? "" }) } }
+    { query: { enabled: !!activeQuery && mode === "name", queryKey: getSearchUsersQueryKey({ q: activeQuery ?? "" }) } }
   );
 
   // ── Actions ───────────────────────────────────────────────────────────────
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    const v = input.trim();
-    if (!v) return;
-    if (mode === "uid") { setActiveUid(v); setActiveQuery(null); }
-    else                { setActiveQuery(v); setActiveUid(null); }
-  };
-
   const drillIntoUid = (uid: string | number | null | undefined) => {
     if (!uid) return;
     setMode("uid");
@@ -130,7 +124,46 @@ export default function Search() {
     setActiveQuery(null);
   };
 
-  const loading = giftsLoading || giftsFetching || profileLoading || profileFetching || searchLoading || searchFetching;
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const v = input.trim();
+    if (!v) return;
+
+    if (mode === "uid") {
+      setActiveUid(v);
+      setActiveQuery(null);
+      return;
+    }
+
+    if (mode === "name") {
+      setActiveQuery(v);
+      setActiveUid(null);
+      return;
+    }
+
+    // ── erban (By ID) — resolve via getInfo API ───────────────────────────
+    if (mode === "erban") {
+      setErbanError(null);
+      setErbanLoading(true);
+      setActiveUid(null);
+      setActiveQuery(null);
+      try {
+        const resp = await fetch(`/api/ditto/lookup/erban/${encodeURIComponent(v)}`);
+        const json = await resp.json() as { ok: boolean; uid?: number | string; nick?: string; error?: string };
+        if (!json.ok || !json.uid) {
+          setErbanError(json.error ?? "User not found for that ID.");
+        } else {
+          drillIntoUid(json.uid);
+        }
+      } catch {
+        setErbanError("Network error — could not resolve ID.");
+      } finally {
+        setErbanLoading(false);
+      }
+    }
+  };
+
+  const loading = erbanLoading || giftsLoading || giftsFetching || profileLoading || profileFetching || searchLoading || searchFetching;
 
   // ── Source badge ──────────────────────────────────────────────────────────
   const sourceBadge = profile?.source?.startsWith("public_api")
@@ -202,11 +235,19 @@ export default function Search() {
         </CardContent>
       </Card>
 
+      {/* Erban lookup error */}
+      {erbanError && !loading && (
+        <div className="flex items-center gap-3 border border-red-500/40 bg-red-500/5 px-4 py-3 text-red-400 text-sm">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          {erbanError}
+        </div>
+      )}
+
       {/* Worker needed notice */}
       {!loading && searchResult && !searchResult.ok && searchResult.workerNeeded && (
         <div className="flex items-center gap-3 border border-yellow-500/40 bg-yellow-500/5 px-4 py-3 text-yellow-400 text-sm">
           <AlertTriangle className="w-4 h-4 shrink-0" />
-          {mode === "erban" ? "ID search requires the Egyptian worker to be running." : "Name search requires the Egyptian worker to be running."}
+          Name search requires the Egyptian worker to be running.
         </div>
       )}
 
