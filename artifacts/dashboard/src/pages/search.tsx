@@ -14,7 +14,7 @@ import {
   AlertTriangle, Radio, Car, Shield, Award, Zap,
 } from "lucide-react";
 
-type SearchMode = "uid" | "name";
+type SearchMode = "uid" | "erban" | "name";
 
 // Extended profile type to include v5 fields
 interface ExtendedProfile {
@@ -76,7 +76,7 @@ export default function Search() {
 
   const { data: searchResult, isLoading: searchLoading, isFetching: searchFetching } = useSearchUsers(
     { q: activeQuery ?? "" },
-    { query: { enabled: !!activeQuery && mode === "name", queryKey: getSearchUsersQueryKey({ q: activeQuery ?? "" }) } }
+    { query: { enabled: !!activeQuery && (mode === "name" || mode === "erban"), queryKey: getSearchUsersQueryKey({ q: activeQuery ?? "" }) } }
   );
 
   // ── Actions ───────────────────────────────────────────────────────────────
@@ -127,15 +127,19 @@ export default function Search() {
 
       {/* Mode tabs */}
       <div className="flex gap-0 border border-border w-fit">
-        {(["uid", "name"] as SearchMode[]).map((m) => (
+        {([
+          { key: "uid",   label: "By UID" },
+          { key: "erban", label: "By ID"  },
+          { key: "name",  label: "By Name" },
+        ] as { key: SearchMode; label: string }[]).map(({ key, label }) => (
           <button
-            key={m}
-            onClick={() => setMode(m)}
+            key={key}
+            onClick={() => { setMode(key); setActiveUid(null); setActiveQuery(null); setInput(""); }}
             className={`px-6 py-2 text-xs font-bold tracking-widest uppercase transition-colors ${
-              mode === m ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"
+              mode === key ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"
             }`}
           >
-            {m === "uid" ? "By UID" : "By Name / ID"}
+            {label}
           </button>
         ))}
       </div>
@@ -145,7 +149,7 @@ export default function Search() {
         <CardContent className="pt-6">
           <form onSubmit={handleSearch} className="flex gap-4">
             <Input
-              placeholder={mode === "uid" ? "ENTER_UID (e.g. 281306)..." : "ENTER_NAME or erbanNo..."}
+              placeholder={mode === "uid" ? "ENTER_UID (e.g. 281306)..." : mode === "erban" ? "ENTER_ID (e.g. 12345)..." : "ENTER_NAME..."}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               className="font-mono rounded-none bg-background border-border focus-visible:ring-primary text-lg h-12"
@@ -165,7 +169,7 @@ export default function Search() {
       {!loading && searchResult && !searchResult.ok && searchResult.workerNeeded && (
         <div className="flex items-center gap-3 border border-yellow-500/40 bg-yellow-500/5 px-4 py-3 text-yellow-400 text-sm">
           <AlertTriangle className="w-4 h-4 shrink-0" />
-          Name search requires the Egyptian worker to be running.
+          {mode === "erban" ? "ID search requires the Egyptian worker to be running." : "Name search requires the Egyptian worker to be running."}
         </div>
       )}
 
@@ -182,8 +186,8 @@ export default function Search() {
         </Card>
       )}
 
-      {/* ── NAME SEARCH RESULTS ───────────────────────────────────────────── */}
-      {!loading && searchResult && searchResult.ok && mode === "name" && (
+      {/* ── NAME / ID SEARCH RESULTS ─────────────────────────────────────── */}
+      {!loading && searchResult && searchResult.ok && (mode === "name" || mode === "erban") && (
         <Card className="bg-card rounded-none border-border animate-in fade-in slide-in-from-bottom-4 duration-300">
           <CardHeader className="border-b border-border pb-3 bg-muted/10 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-mono flex items-center gap-2 uppercase tracking-wider">
