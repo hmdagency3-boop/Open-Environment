@@ -57,11 +57,31 @@ interface ExtendedProfile {
   ban?: number | null;
   userMedalList?: Array<{ id: number; url: string; name: string; expiration?: number }>;
   userRoles?: number[];
-  userWearPropList?: unknown[];
+  userWearPropList?: Array<{
+    propId: number;
+    propType: number;
+    propName: string;
+    coverImg?: string | null;
+    effectUrl?: string | null;
+    effectSize?: string | null;
+    expireSecond?: number | null;
+    svipLevel?: number | null;
+    wear?: boolean;
+    effectType?: number;
+    mallDiscount?: string | null;
+  }>;
   source?: string;
   workerUsed?: boolean;
   workerNeeded?: boolean;
   raw?: unknown;
+}
+
+function fmtExpiry(ts: number | null | undefined): string {
+  if (ts == null || ts === -1) return "Permanent";
+  const d = new Date(ts);
+  // If year > 2100 treat as effectively permanent
+  if (d.getFullYear() > 2100) return "Permanent";
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 export default function Search() {
@@ -460,18 +480,25 @@ export default function Search() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {medals.map((medal) => (
-                    <div key={medal.id} className="border border-border/40 bg-background/40 p-2 flex flex-col items-center gap-1.5">
-                      <div className="w-full h-10 flex items-center justify-center">
-                        <img src={medal.url} alt={medal.name} className="max-h-10 object-contain"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                <div className="divide-y divide-border/40">
+                  {medals.map((medal) => {
+                    const expiry = fmtExpiry(medal.expiration);
+                    const isPermanent = expiry === "Permanent";
+                    return (
+                      <div key={medal.id} className="flex items-center gap-3 py-2.5 px-1">
+                        <div className="w-12 h-8 flex items-center justify-center shrink-0">
+                          <img src={medal.url} alt={medal.name} className="max-h-8 max-w-12 object-contain"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold truncate">{medal.name}</div>
+                          <div className={`text-[10px] mt-0.5 ${isPermanent ? "text-green-400" : "text-muted-foreground"}`}>
+                            {isPermanent ? "∞ Permanent" : `Expires: ${expiry}`}
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-[10px] text-center text-muted-foreground leading-tight line-clamp-2">
-                        {medal.name}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -552,6 +579,71 @@ export default function Search() {
                       </div>
                     </div>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Worn Props card ───────────────────────────────────────────── */}
+          {(profile?.userWearPropList?.length ?? 0) > 0 && (
+            <Card className="bg-card rounded-none border-cyan-500/30">
+              <CardHeader className="border-b border-border pb-3 bg-cyan-500/5">
+                <CardTitle className="text-sm font-mono text-cyan-400 flex items-center gap-2 uppercase tracking-wider">
+                  <Package className="w-4 h-4" /> Worn Items
+                  <span className="text-muted-foreground font-normal">({profile!.userWearPropList!.length})</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="divide-y divide-border/40">
+                  {profile!.userWearPropList!.map((prop, idx) => {
+                    const expiry = fmtExpiry(prop.expireSecond);
+                    const isPermanent = expiry === "Permanent";
+                    const isWorn = !!prop.wear;
+                    return (
+                      <div key={`${prop.propId}-${prop.propType}-${idx}`} className="flex items-center gap-4 px-4 py-3">
+                        {/* Cover image */}
+                        <div className="w-14 h-14 border border-border/40 bg-muted shrink-0 flex items-center justify-center overflow-hidden">
+                          {prop.coverImg ? (
+                            <img src={prop.coverImg} alt={prop.propName} className="w-full h-full object-cover"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                          ) : (
+                            <Package className="w-5 h-5 text-muted-foreground/40" />
+                          )}
+                        </div>
+                        {/* Info */}
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-bold">{prop.propName}</span>
+                            {isWorn ? (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 border border-cyan-500/40 text-cyan-400 bg-cyan-500/10">WEARING</span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 border border-border/30 text-muted-foreground/50 bg-background/20">NOT WORN</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-[10px] text-muted-foreground flex-wrap">
+                            <span className={isPermanent ? "text-green-400" : ""}>
+                              {isPermanent ? "∞ Permanent" : `Expires: ${expiry}`}
+                            </span>
+                            {prop.svipLevel != null && prop.svipLevel > 0 && (
+                              <span className="text-purple-400">SVIP Lv {prop.svipLevel}</span>
+                            )}
+                            {prop.effectSize && (
+                              <span>Size: {prop.effectSize}</span>
+                            )}
+                            {prop.mallDiscount && (
+                              <span className="text-orange-400">{prop.mallDiscount} off</span>
+                            )}
+                          </div>
+                          {prop.effectUrl && prop.effectType === 2 && (
+                            <a href={prop.effectUrl} target="_blank" rel="noopener noreferrer"
+                              className="text-[10px] text-primary hover:underline inline-block">
+                              VIEW EFFECT ↗
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>
