@@ -104,6 +104,12 @@ interface PublicProfile {
   age: number | null;
   country: string | null;
   countryGroup: string | null;
+  countryGroupRank: string | null;
+  defUser: number | null;
+  fillType: number | null;
+  usersAvatarStatus: number | null;
+  chatGift: number | null;
+  chatRange: number | null;
   growthLevel: number | null;
   growthLevelPic: string | null;
   experLevel: number | null;
@@ -168,6 +174,12 @@ async function fetchPublicProfile(uid: string | number): Promise<PublicProfile |
       age:              (d.age     as number)  ?? null,
       country:          (d.country as string)  || null,
       countryGroup:     (d.countryGroup as string) || null,
+      countryGroupRank: (d.countryGroupRank as string) || null,
+      defUser:          d.defUser   != null ? (d.defUser as number) : null,
+      fillType:         d.fillType  != null ? (d.fillType as number) : null,
+      usersAvatarStatus: d.usersAvatarStatus != null ? (d.usersAvatarStatus as number) : null,
+      chatGift:         d.chatGift  != null ? (d.chatGift as number) : null,
+      chatRange:        d.chatRange != null ? (d.chatRange as number) : null,
       growthLevel:      (d.growthLevel    as number) ?? null,
       growthLevelPic:   (d.growthLevelPic as string) || null,
       experLevel:       (d.experLevel     as number) ?? null,
@@ -515,6 +527,12 @@ router.get("/user/:uid/profile", async (req, res) => {
         countryName:      null,
         countryIcon:      null,
         countryGroup:     pub.countryGroup,
+        countryGroupRank: pub.countryGroupRank,
+        defUser:          pub.defUser,
+        fillType:         pub.fillType,
+        usersAvatarStatus: pub.usersAvatarStatus,
+        chatGift:         pub.chatGift,
+        chatRange:        pub.chatRange,
         vipLevel:         pub.vipId,
         vipName:          pub.vipName,
         vipIcon:          pub.vipIcon,

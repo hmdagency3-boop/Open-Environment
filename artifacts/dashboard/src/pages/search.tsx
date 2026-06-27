@@ -39,7 +39,13 @@ interface ExtendedProfile {
   vipIcon?: string | null;
   vipMedal?: string | null;
   vipInfoDto?: Record<string, unknown> | null;
-  svipInfo?: { level?: number; personalPageEffect?: string; svipStatus?: number; privilegeDataList?: number[] } | null;
+  svipInfo?: { level?: number; expirationTime?: number; personalPageEffect?: string; svipStatus?: number; privilegeDataList?: number[] } | null;
+  defUser?: number | null;
+  fillType?: number | null;
+  usersAvatarStatus?: number | null;
+  countryGroupRank?: string | null;
+  chatGift?: number | null;
+  chatRange?: number | null;
   gender?: number | null;
   age?: number | null;
   growthLevel?: number | null;
@@ -329,8 +335,14 @@ export default function Search() {
                   <InfoCell label="NICKNAME"     value={profile?.nickname} />
                   <InfoCell label="ERBAN_NO"     value={profile?.erbanNo != null ? `${profile.erbanNo}${profile.hasPrettyErbanNo ? " ✦" : ""}` : undefined} />
                   <InfoCell label="COUNTRY"      value={profile?.countryName ?? profile?.countryCode} />
-                  <InfoCell label="COUNTRY_GROUP" value={profile?.countryGroup ?? undefined} />
+                  <InfoCell label="COUNTRY_GROUP"      value={profile?.countryGroup ?? undefined} />
+                  <InfoCell label="COUNTRY_GROUP_RANK" value={profile?.countryGroupRank ?? undefined} />
                   <InfoCell label="AGE"          value={profile?.age != null ? `${profile.age} yrs` : undefined} />
+                  <InfoCell label="DEF_USER"     value={profile?.defUser != null ? String(profile.defUser) : undefined} />
+                  <InfoCell label="FILL_TYPE"    value={profile?.fillType != null ? String(profile.fillType) : undefined} />
+                  <InfoCell label="AVATAR_STATUS" value={profile?.usersAvatarStatus != null ? String(profile.usersAvatarStatus) : undefined} />
+                  <InfoCell label="CHAT_GIFT"    value={profile?.chatGift != null ? String(profile.chatGift) : undefined} />
+                  <InfoCell label="CHAT_RANGE"   value={profile?.chatRange != null ? String(profile.chatRange) : undefined} />
                   <InfoCell label="VIP"          value={profile?.vipName || (profile?.vipLevel ? `Level ${profile.vipLevel}` : undefined)} color="text-yellow-400" />
                   <InfoCell label="SVIP"         value={profile?.svipInfo?.level ? `Level ${profile.svipInfo.level}` : undefined} color="text-purple-400" />
                   <InfoCell label="FANS"         value={profile?.fansNum?.toLocaleString()}  color="text-secondary" />
@@ -577,11 +589,28 @@ export default function Search() {
                         {profile.svipInfo.privilegeDataList?.length ?? 0} privileges active
                         {profile.svipInfo.svipStatus === 1 ? " · Active" : " · Inactive"}
                       </div>
+                      {profile.svipInfo.expirationTime != null && (
+                        <div className={`text-xs mt-1 font-mono ${fmtExpiry(profile.svipInfo.expirationTime) === "Permanent" ? "text-green-400" : "text-muted-foreground"}`}>
+                          Expires: {fmtExpiry(profile.svipInfo.expirationTime)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          {/* ── User Roles ────────────────────────────────────────────────── */}
+          {(profile?.userRoles?.length ?? 0) > 0 && (
+            <div className="flex items-center gap-2 flex-wrap px-1">
+              <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">User Roles:</span>
+              {profile!.userRoles!.map((r) => (
+                <span key={r} className="text-[10px] font-bold px-2 py-0.5 border border-primary/40 text-primary bg-primary/10 font-mono">
+                  ROLE_{r}
+                </span>
+              ))}
+            </div>
           )}
 
           {/* ── Worn Props card ───────────────────────────────────────────── */}
