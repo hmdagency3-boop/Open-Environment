@@ -401,6 +401,65 @@ router.post("/session/inject", (req, res) => {
   }
 });
 
+// ── POST /api/ditto/decrypt ───────────────────────────────────────────────────
+// Accepts an `ed` value (base64 or URL-encoded base64 AES-128-CBC ciphertext)
+// and returns the decrypted + de-gzipped JSON payload.
+router.post("/decrypt", (req, res) => {
+  try {
+    let ed: string | undefined =
+      (req.body?.ed as string | undefined) ||
+      (typeof req.body === "string" ? req.body : undefined);
+
+    if (!ed) {
+      res.status(400).json({ ok: false, error: "missing `ed` field" }); return;
+    }
+
+    // URL-decode if needed
+    if (ed.includes("%")) ed = decodeURIComponent(ed);
+
+    // Fix URL-safe base64 and missing padding
+    ed = ed.trim().replace(/-/g, "+").replace(/_/g, "/");
+    while (ed.length % 4) ed += "=";
+
+    // AES-128-CBC decrypt
+    const d = createDecipheriv("aes-128-cbc", KEY, IV);
+    const raw = Buffer.concat([d.update(Buffer.from(ed, "base64")), d.final()]);
+
+    // Try to gunzip; if it fails, assume it's plain text
+    let text: string;
+    try {
+      text = gunzipSync(raw).toString("utf8");
+    } catch {
+      text = raw.toString("utf8");
+    }
+
+    // Try to parse as JSON
+    try {
+      const parsed = JSON.parse(text);
+      // If the outer JSON itself has another `ed` field, recursively decrypt that too
+      if (typeof parsed?.ed === "string") {
+        try {
+          let inner = parsed.ed.trim().replace(/-/g, "+").replace(/_/g, "/");
+          while (inner.length % 4) inner += "=";
+          const di = createDecipheriv("aes-128-cbc", KEY, IV);
+          const rawInner = Buffer.concat([di.update(Buffer.from(inner, "base64")), di.final()]);
+          let textInner: string;
+          try { textInner = gunzipSync(rawInner).toString("utf8"); } catch { textInner = rawInner.toString("utf8"); }
+          const parsedInner = JSON.parse(textInner);
+          res.json({ ok: true, result: parsedInner, layers: 2 });
+          return;
+        } catch { /* fall through — return outer */ }
+      }
+      res.json({ ok: true, result: parsed, layers: 1 });
+    } catch {
+      res.json({ ok: true, result: text, layers: 1, raw: true });
+    }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    res.status(400).json({ ok: false, error: msg });
+  }
+});
+
 // ── POST /api/ditto/session/nimkey ───────────────────────────────────────────
 // Update only the NIM appkey in the session (called by Frida hook auto-push).
 router.post("/session/nimkey", (req, res) => {
