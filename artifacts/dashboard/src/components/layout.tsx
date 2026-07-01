@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useGetWorkerStatus, useHealthCheck } from "@workspace/api-client-react";
-import { Activity, RadioReceiver, Search, LayoutGrid, Terminal, KeyRound } from "lucide-react";
+import { Activity, RadioReceiver, Search, LayoutGrid, Terminal, KeyRound, Building2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -28,6 +28,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { href: "/search", label: "LOOKUP", icon: Search },
     { href: "/rooms", label: "NETWORK", icon: LayoutGrid },
     { href: "/decrypt", label: "DECRYPT", icon: KeyRound },
+    { href: "/guild", label: "GUILDS", icon: Building2 },
   ];
 
   return (

@@ -944,6 +944,139 @@ router.get("/explore", async (_req, res) => {
   }
 });
 
+// ── GET /api/ditto/guild/rank ─────────────────────────────────────────────────
+// Returns top guild/agency rankings from Ditto's /guild/live/wallet/bill endpoint.
+// CDN-locked from Replit — falls back to worker if connected.
+router.get("/guild/rank", async (_req, res) => {
+  const workerConnected = lastWorkerPollAt && (Date.now() - lastWorkerPollAt) < 10000;
+
+  // Try direct first
+  try {
+    const result = await dittoCall("/guild/live/wallet/bill") as Record<string, unknown>;
+    if (result?.code === 200) {
+      const data = result.data as Record<string, unknown>;
+      const rankList = ((data?.rankList ?? []) as Record<string, unknown>[]).map(parseGuild);
+      return res.json({ ok: true, guilds: rankList, workerUsed: false, workerNeeded: false });
+    }
+  } catch { /* fall through */ }
+
+  if (!workerConnected) {
+    return res.json({ ok: false, guilds: [], workerUsed: false, workerNeeded: true });
+  }
+
+  const { result, timedOut } = await queueWorkerJob("/guild/live/wallet/bill", {}, 25000);
+  if (timedOut || !result) {
+    return res.json({ ok: false, guilds: [], workerUsed: true, workerNeeded: false, error: timedOut ? "Worker timeout" : "No result" });
+  }
+  const r = result as Record<string, unknown>;
+  if (r.code === 200) {
+    const data = r.data as Record<string, unknown>;
+    const rankList = ((data?.rankList ?? []) as Record<string, unknown>[]).map(parseGuild);
+    return res.json({ ok: true, guilds: rankList, workerUsed: true, workerNeeded: false });
+  }
+  return res.json({ ok: false, guilds: [], workerUsed: true, workerNeeded: false, error: `API code ${r.code}` });
+});
+
+function parseGuild(g: Record<string, unknown>) {
+  return {
+    gid:            g.guildId   ?? g.gid           ?? null,
+    name:           g.guildNick ?? g.name           ?? null,
+    avatar:         g.guildAvatar ?? g.avatar       ?? null,
+    countryIcon:    g.guildCountryIcon ?? g.countryIcon ?? null,
+    privilegeLevel: g.privilegeLevel  ?? 0,
+    rank:           g.rank ?? null,
+    type:           g.type ?? null,
+    certifiedAnchor: g.certifiedAnchor ?? false,
+    isPrivilege:    g.isPrivilege ?? false,
+  };
+}
+
+// ── GET /api/ditto/guild/search ───────────────────────────────────────────────
+// Multi-strategy guild search:
+//   - Numeric q → match against known guild rank list by gid
+//   - Any q     → scan room tabs for rooms whose title/desc contains the query
+router.get("/guild/search", async (req, res) => {
+  const q = (req.query.q as string ?? "").trim();
+  if (!q) {
+    res.status(400).json({ ok: false, guilds: [], rooms: [], error: "q required" });
+    return;
+  }
+
+  const isNumeric = /^\d+$/.test(q);
+  const qLower    = q.toLowerCase();
+  const workerConnected = lastWorkerPollAt && (Date.now() - lastWorkerPollAt) < 10000;
+
+  // 1. Try guild rank list to find specific guild by gid
+  let matchedGuilds: ReturnType<typeof parseGuild>[] = [];
+  try {
+    const result = await dittoCall("/guild/live/wallet/bill") as Record<string, unknown>;
+    if (result?.code === 200) {
+      const data = result.data as Record<string, unknown>;
+      const rankList = ((data?.rankList ?? []) as Record<string, unknown>[]).map(parseGuild);
+      matchedGuilds = rankList.filter(g => {
+        if (isNumeric) return String(g.gid) === q;
+        return String(g.name ?? "").toLowerCase().includes(qLower);
+      });
+    }
+  } catch { /* ignore */ }
+
+  // If CDN locked but worker is available, try via worker
+  if (matchedGuilds.length === 0 && workerConnected) {
+    try {
+      const { result, timedOut } = await queueWorkerJob("/guild/live/wallet/bill", {}, 20000);
+      if (!timedOut && result) {
+        const r = result as Record<string, unknown>;
+        if (r.code === 200) {
+          const data = r.data as Record<string, unknown>;
+          const rankList = ((data?.rankList ?? []) as Record<string, unknown>[]).map(parseGuild);
+          matchedGuilds = rankList.filter(g => {
+            if (isNumeric) return String(g.gid) === q;
+            return String(g.name ?? "").toLowerCase().includes(qLower);
+          });
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // 2. Scan room tabs for rooms whose title/desc matches the query
+  const TABS = ["POPULAR", "ALL", "EG", "SA", "AE", "IQ", "MA", "LY", "TN", "SD", "JO", "KW", "SY", "OM"];
+  const tabResults = await Promise.allSettled(
+    TABS.map(tab =>
+      dittoCall("/home/tab/room", { tab, pageNum: "1", pageSize: "50" }) as Promise<Record<string, unknown>>
+    )
+  );
+
+  const seen    = new Set<string>();
+  const allRooms: ReturnType<typeof parseRoom>[] = [];
+  for (const r of tabResults) {
+    if (r.status !== "fulfilled" || r.value?.code !== 200) continue;
+    const data = r.value.data as Record<string, unknown>;
+    const list = ((data?.listRoom ?? data?.list ?? []) as Record<string, unknown>[]);
+    for (const raw of list) {
+      const room = parseRoom(raw);
+      const key  = String(room.roomId ?? "");
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      allRooms.push(room);
+    }
+  }
+
+  const matchingRooms = allRooms.filter(room => {
+    if (isNumeric) return String(room.roomId) === q || String(room.uid) === q;
+    const haystack = [room.roomName, room.nick, room.roomDesc]
+      .filter(Boolean).join(" ").toLowerCase();
+    return haystack.includes(qLower);
+  });
+
+  res.json({
+    ok: true,
+    guilds: matchedGuilds,
+    rooms: matchingRooms,
+    scanned: allRooms.length,
+    workerUsed: workerConnected,
+  });
+});
+
 // ── GET /api/ditto/worker/status ──────────────────────────────────────────────
 router.get("/worker/status", (_req, res) => {
   const pendingJobs = [...(globalThis._dittoJobs?.values() ?? [])].filter(j => !j.done).length;

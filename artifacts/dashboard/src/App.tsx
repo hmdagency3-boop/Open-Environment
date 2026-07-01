@@ -7,6 +7,7 @@ import Home from "@/pages/home";
 import Search from "@/pages/search";
 import Rooms from "@/pages/rooms";
 import Decrypt from "@/pages/decrypt";
+import Guild from "@/pages/guild";
 import Layout from "@/components/layout";
 
 const queryClient = new QueryClient();
@@ -19,6 +20,7 @@ function Router() {
         <Route path="/search" component={Search} />
         <Route path="/rooms" component={Rooms} />
         <Route path="/decrypt" component={Decrypt} />
+        <Route path="/guild" component={Guild} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
