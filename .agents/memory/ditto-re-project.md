@@ -1,6 +1,6 @@
 ---
 name: Ditto Live APK Reverse Engineering
-description: Full RE of com.ditto.mobile. AES key/IV confirmed via Frida. Working external API client built. 57 endpoints discovered. 14 confirmed working from Replit. CDN geo-lock root cause identified.
+description: Full RE of com.ditto.mobile. AES key/IV confirmed via Frida. Working external API client built. 57 endpoints discovered. 14 confirmed working from Replit. CDN geo-lock root cause identified. NIM chatroom blocked on appkey — needs Frida getNetEaseKey() capture.
 ---
 
 # Ditto Live (com.ditto.mobile) — Full RE Summary

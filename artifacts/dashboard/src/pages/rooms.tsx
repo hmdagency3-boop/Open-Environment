@@ -87,7 +87,7 @@ export default function Rooms() {
   // ── Chat state ───────────────────────────────────────────────────────────────
   const [chatOpen,     setChatOpen]     = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatStatus,   setChatStatus]   = useState<"idle" | "connecting" | "connected" | "failed" | "no_credentials">("idle");
+  const [chatStatus,   setChatStatus]   = useState<"idle" | "connecting" | "connected" | "failed" | "no_credentials" | "no_addresses">("idle");
   const nimChatroomRef = useRef<unknown>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -185,8 +185,8 @@ export default function Rooms() {
         const chatroomAddresses: string[] = addrData.addresses ?? [];
 
         if (chatroomAddresses.length === 0) {
-          console.warn("[NIM] No chatroom addresses available — chat disabled for this session.");
-          if (!cancelled) setChatStatus("no_credentials");
+          console.warn("[NIM] No chatroom addresses — NIM appkey likely wrong or not captured yet.");
+          if (!cancelled) setChatStatus("no_addresses");
           return;
         }
 
@@ -728,7 +728,18 @@ export default function Rooms() {
                 <div className="p-2 border border-orange-400/30 bg-orange-400/5 text-[9px] text-orange-400">
                   <p className="font-bold">NO_NIM_TOKEN</p>
                   <p className="mt-1 text-orange-400/70">netEaseToken missing. Capture it from the Ditto login flow (/acc/third/login response) and add it via the Session Inject dialog.</p>
-                  <p className="mt-2 font-mono text-[8px] text-orange-300/60">Frida: getNetEaseKey() → NIM App Key</p>
+                </div>
+              )}
+              {chatStatus === "no_addresses" && (
+                <div className="p-2 border border-yellow-500/30 bg-yellow-500/5 text-[9px] text-yellow-400 space-y-1">
+                  <p className="font-bold">NIM_LBS_FAILED — NIM App Key Unknown</p>
+                  <p className="text-yellow-400/70">The NIM LBS server returned no chatroom addresses. The NIM appkey is embedded in libndklib-common.so and must be captured at runtime.</p>
+                  <p className="font-bold mt-1">How to fix:</p>
+                  <ol className="list-decimal list-inside text-yellow-300/70 space-y-0.5">
+                    <li>Run Frida hook on a rooted device:</li>
+                  </ol>
+                  <p className="font-mono text-[8px] bg-black/30 p-1 break-all">frida -U -f com.ditto.mobile -l frida_hook_ditto.js --no-pause</p>
+                  <p className="text-yellow-300/70">The hook will auto-push the NIM appkey to this backend when it captures <span className="font-mono">getNetEaseKey()</span>. Or manually inject it via the Session Inject dialog.</p>
                 </div>
               )}
               {chatStatus === "connected" && chatMessages.length === 0 && (

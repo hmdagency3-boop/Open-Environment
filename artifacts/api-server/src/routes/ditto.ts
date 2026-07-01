@@ -401,6 +401,24 @@ router.post("/session/inject", (req, res) => {
   }
 });
 
+// ── POST /api/ditto/session/nimkey ───────────────────────────────────────────
+// Update only the NIM appkey in the session (called by Frida hook auto-push).
+router.post("/session/nimkey", (req, res) => {
+  const { nimAppKey } = req.body ?? {};
+  if (!nimAppKey || typeof nimAppKey !== "string" || !/^[0-9a-f]{32}$/i.test(nimAppKey.trim())) {
+    res.status(400).json({ ok: false, error: "nimAppKey must be a 32-char hex string" }); return;
+  }
+  try {
+    let session: Record<string, unknown> = {};
+    try { session = JSON.parse(readFileSync(SESSION_FILE, "utf8")); } catch { /* new file */ }
+    session.nimAppKey = nimAppKey.trim().toLowerCase();
+    writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2));
+    res.json({ ok: true, nimAppKey: nimAppKey.trim().toLowerCase() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
 // ── GET /api/ditto/nim-credentials ───────────────────────────────────────────
 // Returns NIM chatroom credentials for the frontend chat SDK.
 // nimAppKey falls back to the candidate extracted from the APK DEX.

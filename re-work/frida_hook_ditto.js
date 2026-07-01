@@ -171,6 +171,71 @@ Java.perform(function () {
     console.log('[-] OkHttp hook failed: ' + e);
   }
 
+  // ─── Auto-push NIM appkey to monitoring backend ───────────────────────────
+  // When getNetEaseKey() is captured, POST it to the dashboard backend so the
+  // chat SDK can use it immediately without manual copy-paste.
+  function pushNimKey(key) {
+    if (!key || key.length !== 32 || !/^[0-9a-f]+$/i.test(key)) {
+      console.log('[NIM_PUSH] Skipping key push — not a 32-char hex string: ' + key);
+      return;
+    }
+    console.log('[NIM_PUSH] Pushing NIM appkey to backend: ' + key.slice(0, 8) + '...');
+    try {
+      const JavaString = Java.use('java.lang.String');
+      const URL = Java.use('java.net.URL');
+      const Thread = Java.use('java.lang.Thread');
+
+      Java.scheduleOnMainThread(function () {
+        try {
+          const url = new URL.$new('http://localhost:8080/api/ditto/session/nimkey');
+          const conn = url.openConnection();
+          conn.setRequestMethod('POST');
+          conn.setDoOutput(true);
+          conn.setRequestProperty('Content-Type', 'application/json');
+          conn.setConnectTimeout(5000);
+          conn.setReadTimeout(5000);
+          const body = new JavaString.$new('{"nimAppKey":"' + key + '"}');
+          const bytes = body.getBytes('UTF-8');
+          const os = conn.getOutputStream();
+          os.write(bytes);
+          os.flush();
+          os.close();
+          const code = conn.getResponseCode();
+          console.log('[NIM_PUSH] Backend responded: HTTP ' + code);
+          conn.disconnect();
+        } catch (e) {
+          console.log('[NIM_PUSH] Push failed (is backend running?): ' + e);
+        }
+      });
+    } catch (e) {
+      console.log('[NIM_PUSH] Schedule error: ' + e);
+    }
+  }
+
+  // Hook getNetEaseKey specifically to capture + push the NIM appkey
+  const nimKeyClasses = [
+    'com.juxiao.jni.JniUtils',
+    'com.ditto.ditto_framework.aes.JniAesKit',
+    'com.ditto.ditto_framework.sign.SignKit',
+  ];
+  nimKeyClasses.forEach(function (className) {
+    try {
+      const Cls = Java.use(className);
+      try {
+        Cls['getNetEaseKey'].overloads.forEach(function (overload) {
+          overload.implementation = function () {
+            const result = overload.apply(this, arguments);
+            const key = result ? result.toString() : null;
+            console.log('\n[NIM_KEY] ' + className + '.getNetEaseKey() => ' + key);
+            if (key) pushNimKey(key);
+            return result;
+          };
+        });
+        console.log('[+] getNetEaseKey hook + auto-push installed on ' + className);
+      } catch (e) { /* method not on this class */ }
+    } catch (e) { /* class not found */ }
+  });
+
   console.log('\n[*] All hooks ready! Launch/use the app now.\n');
   console.log('='.repeat(60));
 });
