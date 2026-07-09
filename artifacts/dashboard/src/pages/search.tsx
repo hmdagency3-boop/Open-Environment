@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   SearchIcon, User, Package, Hash, Users, Star,
   AlertTriangle, Radio, Car, Shield, Award, Zap,
+  Navigation, Loader2, MapPin, ExternalLink,
 } from "lucide-react";
 
 type SearchMode = "uid" | "erban" | "name";
@@ -97,6 +98,8 @@ export default function Search() {
   const [activeQuery, setActiveQuery] = useState<string | null>(null);
   const [erbanLoading, setErbanLoading] = useState(false);
   const [erbanError, setErbanError] = useState<string | null>(null);
+  const [trackResult, setTrackResult] = useState<{ roomId: number | null; type?: number; workerNeeded?: boolean; error?: string } | null>(null);
+  const [trackLoading, setTrackLoading] = useState(false);
 
   // ── Queries ───────────────────────────────────────────────────────────────
   const { data: gifts, isLoading: giftsLoading, isFetching: giftsFetching } = useGetUserByUid(
@@ -122,6 +125,22 @@ export default function Search() {
     setInput(String(uid));
     setActiveUid(String(uid));
     setActiveQuery(null);
+    setTrackResult(null);
+  };
+
+  const handleTrack = async () => {
+    if (!activeUid) return;
+    setTrackLoading(true);
+    setTrackResult(null);
+    try {
+      const resp = await fetch(`/api/ditto/user/find/${encodeURIComponent(activeUid)}`);
+      const json = await resp.json() as { ok: boolean; roomId?: number | null; type?: number; workerNeeded?: boolean; error?: string };
+      setTrackResult({ roomId: json.roomId ?? null, type: json.type, workerNeeded: json.workerNeeded, error: json.error });
+    } catch {
+      setTrackResult({ roomId: null, error: "Network error" });
+    } finally {
+      setTrackLoading(false);
+    }
   };
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -335,6 +354,17 @@ export default function Search() {
                     NOT_FOUND_OFFLINE
                   </Badge>
                 )}
+                {/* TRACK button */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-[10px] font-bold px-2 border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10 gap-1"
+                  onClick={handleTrack}
+                  disabled={trackLoading}
+                >
+                  {trackLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Navigation className="w-3 h-3" />}
+                  TRACK
+                </Button>
               </div>
             </CardHeader>
             <CardContent className="pt-5">
@@ -404,6 +434,45 @@ export default function Search() {
               {profile?.workerNeeded && !profile?.ok && (
                 <div className="mt-4 text-xs text-muted-foreground border-t border-border/30 pt-3">
                   User not found in active rooms. Start the Egyptian worker to fetch full profile.
+                </div>
+              )}
+
+              {/* ── TRACK result ───────────────────────────────────────────── */}
+              {trackResult && (
+                <div className="mt-4 border-t border-border/30 pt-3">
+                  {trackResult.workerNeeded ? (
+                    <div className="flex items-center gap-2 text-xs text-yellow-400">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>TRACK محتاج Worker — وصّل الـ Frida من النوكس علشان يتجاوز الـ CDN lock</span>
+                    </div>
+                  ) : trackResult.roomId ? (
+                    <div className="flex items-center gap-3 bg-cyan-500/10 border border-cyan-500/30 px-3 py-2.5 rounded">
+                      <MapPin className="w-4 h-4 text-cyan-400 shrink-0 animate-pulse" />
+                      <div className="flex-1">
+                        <div className="text-xs text-cyan-400 font-bold uppercase tracking-wider">المستخدم موجود الآن في:</div>
+                        <div className="text-sm font-mono font-bold text-foreground mt-0.5">
+                          Room <span className="text-cyan-300">#{trackResult.roomId}</span>
+                          {trackResult.type != null && (
+                            <span className="text-xs text-muted-foreground ml-2">type={trackResult.type}</span>
+                          )}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-xs text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/20 gap-1 h-7"
+                        onClick={() => window.open(`/rooms`, "_blank")}
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        ROOMS
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Radio className="w-3.5 h-3.5 shrink-0" />
+                      <span>المستخدم مش موجود في أي روم دلوقتي{trackResult.error ? ` — ${trackResult.error}` : ""}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

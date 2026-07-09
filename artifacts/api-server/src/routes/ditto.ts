@@ -782,6 +782,40 @@ function buildProfileResponse(uid: string, d: Record<string, unknown>, workerUse
   };
 }
 
+// ── GET /api/ditto/user/find/:uid ─────────────────────────────────────────────
+// Locates which room a user is currently in — mirrors the app's "تتبع" (track) button.
+// Returns { uid, roomId, type } or { roomId: null } if offline / CDN-locked.
+router.get("/user/find/:uid", async (req, res) => {
+  const tgUid = req.params.uid;
+  if (!/^\d+$/.test(tgUid)) {
+    res.status(400).json({ ok: false, error: "numeric uid required" }); return;
+  }
+  const workerConnected = lastWorkerPollAt && (Date.now() - lastWorkerPollAt) < 10000;
+
+  try {
+    const result = await dittoCall("/user/find", { tgUid }) as Record<string, unknown>;
+    if (result?.code === 200) {
+      const d = result.data as Record<string, unknown>;
+      return res.json({ ok: true, uid: d.uid, roomId: d.roomId, type: d.type, workerUsed: false, workerNeeded: false });
+    }
+  } catch { /* fall through */ }
+
+  if (!workerConnected) {
+    return res.json({ ok: false, roomId: null, workerUsed: false, workerNeeded: true });
+  }
+
+  const { result, timedOut } = await queueWorkerJob("/user/find", { tgUid }, 20000);
+  if (timedOut || !result) {
+    return res.json({ ok: false, roomId: null, workerUsed: true, workerNeeded: false, error: timedOut ? "Worker timeout" : "No result" });
+  }
+  const r = result as Record<string, unknown>;
+  if (r.code === 200) {
+    const d = r.data as Record<string, unknown>;
+    return res.json({ ok: true, uid: d.uid, roomId: d.roomId, type: d.type, workerUsed: true, workerNeeded: false });
+  }
+  return res.json({ ok: false, roomId: null, workerUsed: true, workerNeeded: false, error: `code ${r.code}` });
+});
+
 // ── GET /api/ditto/search ─────────────────────────────────────────────────────
 router.get("/search", async (req, res) => {
   const q = (req.query.q as string ?? "").trim();
