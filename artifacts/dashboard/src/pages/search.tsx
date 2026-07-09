@@ -31,6 +31,7 @@ interface ExtendedProfile {
   level?: number | null;
   diamond?: number | null;
   online?: boolean | null;
+  roomId?: number | null;
   countryCode?: string | null;
   countryName?: string | null;
   countryIcon?: string | null;
@@ -130,6 +131,13 @@ export default function Search() {
 
   const handleTrack = async () => {
     if (!activeUid) return;
+
+    // Fast path: profile already knows the room (user is currently hosting a live room)
+    if (profile?.source === "live_room" && profile?.roomId) {
+      setTrackResult({ roomId: profile.roomId, workerNeeded: false });
+      return;
+    }
+
     setTrackLoading(true);
     setTrackResult(null);
     try {
@@ -441,9 +449,21 @@ export default function Search() {
               {trackResult && (
                 <div className="mt-4 border-t border-border/30 pt-3">
                   {trackResult.workerNeeded ? (
-                    <div className="flex items-center gap-2 text-xs text-yellow-400">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                      <span>TRACK محتاج Worker — وصّل الـ Frida من النوكس علشان يتجاوز الـ CDN lock</span>
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2 text-xs text-yellow-400">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        <span className="font-bold">محتاج Worker</span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground space-y-0.5">
+                        <div>❌ Direct API — CDN-locked (IP مش مصري)</div>
+                        <div>❌ Room scan — المستخدم مش بيهوست روم دلوقتي</div>
+                        <div>❌ Worker — مش متصل</div>
+                        {profile?.online && (
+                          <div className="text-cyan-400 mt-1">
+                            ⚠️ البروفايل بيقول اليوزر online — وصّل الـ Frida Worker علشان تلاقيه
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ) : trackResult.roomId ? (
                     <div className="flex items-center gap-3 bg-cyan-500/10 border border-cyan-500/30 px-3 py-2.5 rounded">

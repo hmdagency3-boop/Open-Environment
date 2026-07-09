@@ -715,6 +715,7 @@ router.get("/user/:uid/profile", async (req, res) => {
         vipLevel:   vip?.vipId   ?? null,
         vipName:    vip?.vipName ?? null,
         gender:     roomEntry.gender     ?? null,
+        roomId:     roomEntry.roomId     ?? roomEntry.id ?? null,
         source:     "live_room",
         workerUsed: false,
         workerNeeded: false,
@@ -792,16 +793,34 @@ router.get("/user/find/:uid", async (req, res) => {
   }
   const workerConnected = lastWorkerPollAt && (Date.now() - lastWorkerPollAt) < 10000;
 
+  // ── Option 1: direct CDN call (works from Egyptian IPs) ──────────────────
   try {
     const result = await dittoCall("/user/find", { tgUid }) as Record<string, unknown>;
     if (result?.code === 200) {
       const d = result.data as Record<string, unknown>;
-      return res.json({ ok: true, uid: d.uid, roomId: d.roomId, type: d.type, workerUsed: false, workerNeeded: false });
+      return res.json({ ok: true, uid: d.uid, roomId: d.roomId, type: d.type, source: "api", workerUsed: false, workerNeeded: false });
     }
   } catch { /* fall through */ }
 
+  // ── Option 2: scan live room list (free, works from any IP — finds hosts only) ──
+  try {
+    const roomEntry = await findUserInRooms(tgUid);
+    if (roomEntry) {
+      return res.json({
+        ok: true,
+        uid: tgUid,
+        roomId: roomEntry.roomId ?? roomEntry.id ?? null,
+        type: 1,
+        source: "room_scan",
+        workerUsed: false,
+        workerNeeded: false,
+      });
+    }
+  } catch { /* fall through */ }
+
+  // ── Option 3: worker (bypasses CDN geo-lock — finds audience members too) ──
   if (!workerConnected) {
-    return res.json({ ok: false, roomId: null, workerUsed: false, workerNeeded: true });
+    return res.json({ ok: false, roomId: null, workerUsed: false, workerNeeded: true, source: "none" });
   }
 
   const { result, timedOut } = await queueWorkerJob("/user/find", { tgUid }, 20000);
@@ -811,7 +830,7 @@ router.get("/user/find/:uid", async (req, res) => {
   const r = result as Record<string, unknown>;
   if (r.code === 200) {
     const d = r.data as Record<string, unknown>;
-    return res.json({ ok: true, uid: d.uid, roomId: d.roomId, type: d.type, workerUsed: true, workerNeeded: false });
+    return res.json({ ok: true, uid: d.uid, roomId: d.roomId, type: d.type, source: "worker", workerUsed: true, workerNeeded: false });
   }
   return res.json({ ok: false, roomId: null, workerUsed: true, workerNeeded: false, error: `code ${r.code}` });
 });
