@@ -13,7 +13,13 @@ import {
   SearchIcon, User, Package, Hash, Users, Star,
   AlertTriangle, Radio, Car, Shield, Award, Zap,
   Navigation, Loader2, MapPin, ExternalLink,
+  Volume2, VolumeX, Square, Headphones,
 } from "lucide-react";
+import AgoraRTC, { IAgoraRTCClient, IRemoteAudioTrack } from "agora-rtc-sdk-ng";
+
+const AGORA_APP_ID = "1b77c926d478406cae3174ce0565db4b";
+const SESSION_UID  = 281306;
+AgoraRTC.setLogLevel(4);
 
 type SearchMode = "uid" | "erban" | "name";
 
@@ -101,6 +107,11 @@ export default function Search() {
   const [erbanError, setErbanError] = useState<string | null>(null);
   const [trackResult, setTrackResult] = useState<{ roomId: number | null; type?: number; workerNeeded?: boolean; error?: string } | null>(null);
   const [trackLoading, setTrackLoading] = useState(false);
+  const [listenState, setListenState] = useState<"idle" | "fetching" | "connecting" | "listening" | "error">("idle");
+  const [listenClient, setListenClient] = useState<IAgoraRTCClient | null>(null);
+  const [listenAudioTracks, setListenAudioTracks] = useState<IRemoteAudioTrack[]>([]);
+  const [listenMuted, setListenMuted] = useState(false);
+  const [listenError, setListenError] = useState<string | null>(null);
 
   // ── Queries ───────────────────────────────────────────────────────────────
   const { data: gifts, isLoading: giftsLoading, isFetching: giftsFetching } = useGetUserByUid(
@@ -120,6 +131,77 @@ export default function Search() {
   );
 
   // ── Actions ───────────────────────────────────────────────────────────────
+  const stopListen = async () => {
+    if (listenClient) {
+      listenAudioTracks.forEach(t => { try { t.stop(); } catch (_) {} });
+      try { await listenClient.leave(); } catch (_) {}
+    }
+    setListenClient(null);
+    setListenAudioTracks([]);
+    setListenState("idle");
+    setListenError(null);
+    setListenMuted(false);
+  };
+
+  const handleListen = async (roomId: number) => {
+    await stopListen();
+    setListenState("fetching");
+    setListenError(null);
+    try {
+      const tokenResp = await fetch("/api/ditto/trtc-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId, type: 1, channel: 1 }),
+      });
+      const tokenData = await tokenResp.json() as { ok: boolean; token?: string; error?: unknown };
+      if (!tokenData.ok || !tokenData.token) {
+        setListenState("error");
+        setListenError("فشل جلب الـ TRTC token");
+        return;
+      }
+
+      setListenState("connecting");
+      const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
+      await client.setClientRole("audience");
+      const tracks: IRemoteAudioTrack[] = [];
+
+      client.on("user-published", async (user, mediaType) => {
+        if (mediaType === "audio") {
+          const track = await client.subscribe(user, "audio");
+          tracks.push(track);
+          if (!listenMuted) track.play();
+          setListenAudioTracks(prev => [...prev, track]);
+        }
+      });
+      client.on("user-left", () => {});
+
+      await client.join(AGORA_APP_ID, String(roomId), tokenData.token, SESSION_UID);
+      for (const u of client.remoteUsers) {
+        if (u.hasAudio) {
+          try {
+            const t = await client.subscribe(u, "audio");
+            tracks.push(t);
+            t.play();
+            setListenAudioTracks(prev => [...prev, t]);
+          } catch (_) {}
+        }
+      }
+
+      setListenClient(client);
+      setListenState("listening");
+    } catch (e) {
+      setListenState("error");
+      setListenError(String(e));
+    }
+  };
+
+  const toggleMute = () => {
+    listenAudioTracks.forEach(t => {
+      if (listenMuted) t.play(); else t.stop();
+    });
+    setListenMuted(m => !m);
+  };
+
   const drillIntoUid = (uid: string | number | null | undefined) => {
     if (!uid) return;
     setMode("uid");
@@ -127,6 +209,7 @@ export default function Search() {
     setActiveUid(String(uid));
     setActiveQuery(null);
     setTrackResult(null);
+    stopListen();
   };
 
   const handleTrack = async () => {
@@ -466,26 +549,71 @@ export default function Search() {
                       </div>
                     </div>
                   ) : trackResult.roomId ? (
-                    <div className="flex items-center gap-3 bg-cyan-500/10 border border-cyan-500/30 px-3 py-2.5 rounded">
-                      <MapPin className="w-4 h-4 text-cyan-400 shrink-0 animate-pulse" />
-                      <div className="flex-1">
-                        <div className="text-xs text-cyan-400 font-bold uppercase tracking-wider">المستخدم موجود الآن في:</div>
-                        <div className="text-sm font-mono font-bold text-foreground mt-0.5">
-                          Room <span className="text-cyan-300">#{trackResult.roomId}</span>
-                          {trackResult.type != null && (
-                            <span className="text-xs text-muted-foreground ml-2">type={trackResult.type}</span>
-                          )}
+                    <div className="flex flex-col gap-2">
+                      {/* Room found header */}
+                      <div className="flex items-center gap-3 bg-cyan-500/10 border border-cyan-500/30 px-3 py-2.5 rounded">
+                        <MapPin className="w-4 h-4 text-cyan-400 shrink-0 animate-pulse" />
+                        <div className="flex-1">
+                          <div className="text-xs text-cyan-400 font-bold uppercase tracking-wider">المستخدم موجود الآن في:</div>
+                          <div className="text-sm font-mono font-bold text-foreground mt-0.5">
+                            Room <span className="text-cyan-300">#{trackResult.roomId}</span>
+                            {trackResult.type != null && (
+                              <span className="text-xs text-muted-foreground ml-2">type={trackResult.type}</span>
+                            )}
+                          </div>
                         </div>
+                        {/* LISTEN button */}
+                        {listenState === "idle" || listenState === "error" ? (
+                          <Button
+                            size="sm"
+                            className="h-7 text-[10px] font-bold px-2 gap-1 bg-cyan-500 hover:bg-cyan-400 text-black"
+                            onClick={() => handleListen(trackResult.roomId!)}
+                          >
+                            <Headphones className="w-3 h-3" />
+                            LISTEN
+                          </Button>
+                        ) : listenState === "fetching" || listenState === "connecting" ? (
+                          <Button size="sm" disabled className="h-7 text-[10px] px-2 gap-1">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            {listenState === "fetching" ? "TOKEN..." : "JOINING..."}
+                          </Button>
+                        ) : null}
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-xs text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/20 gap-1 h-7"
-                        onClick={() => window.open(`/rooms`, "_blank")}
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        ROOMS
-                      </Button>
+
+                      {/* Mini player — shown while listening */}
+                      {listenState === "listening" && (
+                        <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 px-3 py-2 rounded">
+                          <div className="flex items-center gap-1.5 text-green-400">
+                            <Radio className="w-3.5 h-3.5 animate-pulse" />
+                            <span className="text-xs font-bold">LIVE</span>
+                          </div>
+                          <div className="flex-1 text-xs text-muted-foreground">
+                            استماع مباشر — Room #{trackResult.roomId}
+                            <span className="ml-2 text-green-400/70">{listenAudioTracks.length} مصدر صوت</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                            onClick={toggleMute}
+                          >
+                            {listenMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 text-red-400 hover:text-red-300"
+                            onClick={stopListen}
+                          >
+                            <Square className="w-3 h-3 fill-current" />
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Error state */}
+                      {listenState === "error" && listenError && (
+                        <div className="text-[10px] text-red-400 px-1">{listenError}</div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
